@@ -1,6 +1,6 @@
 import type { Clock } from "./clock.js";
 import type { ContextBuilder } from "./context.js";
-import type { Channel, InboundEvent, LLMMessage, WakeupEvent } from "./types.js";
+import type { Channel, InboundEvent, LLMMessage, ToolContext, WakeupEvent } from "./types.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ToolRegistry } from "../tools/index.js";
@@ -22,7 +22,10 @@ export class Agent {
   ) {}
 
   async runInbound(event: InboundEvent): Promise<void> {
-    const outcome = await this.run(event.userId, "inbound", { inboundText: event.text });
+    const outcome = await this.run(event.userId, "inbound", {
+      inboundText: event.text,
+      ...(event.storedMessageId === undefined ? {} : { excludeMessageId: event.storedMessageId }),
+    });
     const ownerMessage = event.storedMessageId === undefined ? undefined : this.memory.getMessage(event.storedMessageId);
     const ownerContent = ownerMessage?.content;
     if (outcome.status === "completed" && outcome.delivered === true && this.writer !== undefined && ownerMessage !== undefined && ownerContent !== null && ownerContent !== undefined) {
@@ -31,10 +34,12 @@ export class Agent {
   }
 
   async runWakeup(wakeup: WakeupEvent): Promise<AgentOutcome> {
-    return this.run(wakeup.userId, wakeup.triggerType, { wakeup: `Trigger: ${wakeup.triggerType}${wakeup.commitmentId ? `; commitment: ${wakeup.commitmentId}` : ""}` });
+    const commitment = wakeup.commitmentId ? `; commitment: ${wakeup.commitmentId}` : "";
+    const greeting = wakeup.triggerType === "greeting" && wakeup.greeting !== undefined ? `; ${greetingInstruction(wakeup.greeting)}` : "";
+    return this.run(wakeup.userId, wakeup.triggerType, { wakeup: `Trigger: ${wakeup.triggerType}${commitment}${greeting}` });
   }
 
-  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string }): Promise<AgentOutcome> {
+  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string }): Promise<AgentOutcome> {
     const runId = this.memory.createAgentRun(userId, trigger, this.model);
     try {
       const messages = await this.context.build({ userId, ...input });
@@ -76,9 +81,11 @@ export class Agent {
       }
       for (const call of response.toolCalls) {
         const started = this.clock.now();
+        const sendMedia = this.channel.sendMedia;
+        const context: ToolContext = sendMedia === undefined ? { userId } : { userId, sendMedia: (media) => sendMedia.call(this.channel, userId, media) };
         let output: unknown;
         let status: "ok" | "error" = "ok";
-        try { output = await this.tools.execute(call.name, call.arguments, { userId }); }
+        try { output = await this.tools.execute(call.name, call.arguments, context); }
         catch (error) { status = "error"; output = { error: error instanceof Error ? error.message : "Tool failed" }; }
         const content = JSON.stringify(output);
         this.memory.recordToolResult(userId, runId, call, output, status, this.clock.now() - started);
@@ -87,4 +94,10 @@ export class Agent {
     }
     return { status: "failed", error: `Agent exceeded ${maxToolCycles} tool cycles` };
   }
+}
+
+function greetingInstruction(slot: "morning" | "night"): string {
+  return slot === "morning"
+    ? "ini sapaan pagi. Sapa dia dengan sapaan pagi yang hangat dan masih ngantuk."
+    : "ini sapaan malam. Sapa dia dengan sapaan malam, tanya kabarnya dan ajak dia istirahat atau tidur.";
 }

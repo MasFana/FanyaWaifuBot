@@ -1,7 +1,7 @@
 import { Bot, InputFile } from "grammy";
 import type { AppConfig } from "../config.js";
 import type { Clock } from "../core/clock.js";
-import type { InboundEvent } from "../core/types.js";
+import type { InboundEvent, MediaDelivery, OutboundMedia } from "../core/types.js";
 import type { ForgetResult, MemoryService } from "../memory/service.js";
 import { OwnerQueue } from "../core/owner-queue.js";
 
@@ -13,6 +13,7 @@ export interface TelegramBot {
   sendMessage(chatId: string, text: string): Promise<void>;
   sendChatAction(chatId: string, action: "typing"): Promise<void>;
   sendDocument(chatId: string, document: string): Promise<void>;
+  sendMedia(chatId: string, media: OutboundMedia): Promise<void>;
   start(): Promise<void>;
   stop(): void;
 }
@@ -59,6 +60,19 @@ class GrammyBot implements TelegramBot {
       chatId,
       new InputFile(Buffer.from(document), "fanya-export.json"),
     );
+  }
+
+  async sendMedia(chatId: string, media: OutboundMedia): Promise<void> {
+    const options = media.caption === undefined ? {} : { caption: media.caption };
+    if (media.kind === "audio") {
+      await this.bot.api.sendAudio(chatId, media.url, options);
+    } else if (media.kind === "photo") {
+      await this.bot.api.sendPhoto(chatId, media.url, options);
+    } else if (media.kind === "document") {
+      await this.bot.api.sendDocument(chatId, media.url, options);
+    } else {
+      await this.bot.api.sendVideo(chatId, media.url, options);
+    }
   }
 
   async start(): Promise<void> {
@@ -146,6 +160,17 @@ export class TelegramChannel {
   async sendProactive(userId: string, text: string): Promise<void> {
     if (text.trim().includes(skipProactiveToken)) return;
     await this.deliver(userId, text);
+  }
+
+  async sendMedia(userId: string, media: OutboundMedia): Promise<MediaDelivery> {
+    try {
+      await this.bot.sendMedia(this.resolveChatId(userId), media);
+      return "media";
+    } catch {
+      const link = media.caption === undefined ? media.url : `${media.caption}\n${media.url}`;
+      await this.bot.sendMessage(this.resolveChatId(userId), link);
+      return "link";
+    }
   }
 
   private authorize(
@@ -396,18 +421,22 @@ function buildForgetPrompt(topic: string, result: ForgetResult): string {
   return `[SYSTEM COMMAND: Pacarmu meminta kamu melupakan "${topic}", tapi ada beberapa ingatan yang mirip: ${JSON.stringify(candidates)}. Tanyakan dengan lembut mana yang dia maksud secara lebih spesifik agar kamu tidak salah hapus.]`;
 }
 
+function lowerJoined(items: readonly string[], joiner: string): string {
+  return items.map((item) => item.toLowerCase()).join(joiner);
+}
+
 function formatMemoryFallback(items: string[]): string {
   if (items.length === 0) {
     return "hmmm aku belum nyatet hal-hal khusus nih sayaaaaang, cerita-cerita dulu dong sama akuuu hehe ><";
   }
-  return `kalau soal kamu mah aku inget dong sayaaaaang hehe, aku inget soal ${items.map((item) => item.toLowerCase()).join(", terus ")} 🤍`;
+  return `kalau soal kamu mah aku inget dong sayaaaaang hehe, aku inget soal ${lowerJoined(items, ", terus ")} 🤍`;
 }
 
 function formatAgendaFallback(items: string[]): string {
   if (items.length === 0) {
     return "belum ada jadwal atau janji yang perlu aku ingetin nih yang, kamu lagi selo kahhh? hehe";
   }
-  return `jadwal kamu yang udah aku catet buat aku ingetin nanti itu ada ${items.map((item) => item.toLowerCase()).join(", sama ")} yaaa sayaaaaang ><`;
+  return `jadwal kamu yang udah aku catet buat aku ingetin nanti itu ada ${lowerJoined(items, ", sama ")} yaaa sayaaaaang ><`;
 }
 
 function formatForgetFallback(result: ForgetResult): string {

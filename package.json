@@ -7,6 +7,7 @@
     "start": "node dist/src/main.js",
     "typecheck": "tsc --noEmit",
     "build": "tsc && node -e \"require('node:fs').cpSync('src/db/schema.sql', 'dist/src/db/schema.sql')\"",
+    "db:clean": "node -e \"const fs=require('node:fs');['data/fanya.db','data/fanya.db-shm','data/fanya.db-wal'].forEach(f=>fs.rmSync(f,{force:true}));console.log('db cleaned')\"",
     "test": "tsx --test \"src/**/*.test.ts\" \"tests/**/*.test.ts\""
   },
   "dependencies": {

@@ -39,10 +39,20 @@ export interface WakeupEvent {
   userId: string;
   triggerType: "agenda_reminder" | "agenda_followup" | "spontaneous" | "greeting";
   commitmentId?: string;
+  greeting?: "morning" | "night";
 }
+
+export interface OutboundMedia {
+  kind: "video" | "audio" | "photo" | "document";
+  url: string;
+  caption?: string;
+}
+
+export type MediaDelivery = "media" | "link";
 
 export interface ToolContext {
   userId: string;
+  sendMedia?(media: OutboundMedia): Promise<MediaDelivery>;
 }
 
 export interface ToolDefinition {
@@ -56,6 +66,7 @@ export interface ToolDefinition {
 export interface Channel {
   sendReply(userId: string, text: string): Promise<void>;
   sendProactive(userId: string, text: string): Promise<void>;
+  sendMedia?(userId: string, media: OutboundMedia): Promise<MediaDelivery>;
 }
 
 export interface FactInput {

@@ -17,6 +17,7 @@ class FakeTelegramBot implements TelegramBot {
   async sendMessage(chatId: string, text: string): Promise<void> { this.messages.push({ chatId, text }); }
   async sendChatAction(_chatId: string, action: "typing"): Promise<void> { this.actions.push(action); }
   async sendDocument(chatId: string, document: string): Promise<void> { this.messages.push({ chatId, text: document }); }
+  async sendMedia(): Promise<void> {}
   async start(): Promise<void> {}
   stop(): void {}
 }

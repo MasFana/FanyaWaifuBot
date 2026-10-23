@@ -8,6 +8,7 @@ export interface ContextInput {
   userId: string;
   inboundText?: string;
   wakeup?: string;
+  excludeMessageId?: string;
 }
 
 export class ContextBuilder {
@@ -41,10 +42,14 @@ export class ContextBuilder {
       `Agenda H-1 s/d H+3:\n${agenda.map((item) => `- ${item.title}; acara: ${formatTime(item.eventAt, exported.owner.timezone)}; ingatkan: ${formatTime(item.remindAt, exported.owner.timezone)}; tindak lanjut: ${formatTime(item.followUpAt, exported.owner.timezone)}; konteks: ${item.contextNotes}`).join("\n") || "- Tidak ada"}`,
       `Ringkasan percakapan: ${state.summary ?? "Belum ada ringkasan."}`,
     ].join("\n\n");
-    const history = pairedHistory(exported.messages.slice(-20));
+    const history = pairedHistory(priorMessages(exported.messages, input.excludeMessageId).slice(-20));
     const turn = input.inboundText ?? `[SYSTEM WAKEUP]\n${input.wakeup ?? "Mulai percakapan proaktif sesuai pemicu."}`;
     return [{ role: "system", content: `${this.persona}\n\n${this.guardrails}\n\n${this.toolGuidance}\n\n${dynamic}` }, ...history, { role: "user", content: turn }];
   }
+}
+
+function priorMessages<T extends { id: string }>(messages: readonly T[], excludeMessageId: string | undefined): readonly T[] {
+  return excludeMessageId === undefined ? messages : messages.filter((message) => message.id !== excludeMessageId);
 }
 
 function pairedHistory(messages: readonly import("../memory/service.js").StoredMessage[]): LLMMessage[] {

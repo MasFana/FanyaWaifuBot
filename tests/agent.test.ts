@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import type Database from "better-sqlite3";
+import { z } from "zod";
 import { Agent } from "../src/core/agent.js";
 import { FrozenClock } from "../src/core/clock.js";
 import { ContextBuilder } from "../src/core/context.js";
-import type { Channel, InboundEvent } from "../src/core/types.js";
+import type { Channel, InboundEvent, OutboundMedia, ToolDefinition } from "../src/core/types.js";
 import { migrate, openDatabase } from "../src/db/index.js";
 import { FakeLLMProvider } from "../src/llm/fake.js";
 import { MemoryService } from "../src/memory/service.js";
@@ -100,6 +101,72 @@ test("agent contains LLM and delivery errors while marking run failed", async ()
   channel.sendReply = async () => { throw new Error("telegram down"); };
   await agent.runInbound({ ...inbound, id: "inbound-2" });
   assert.equal((database.prepare("SELECT count(*) AS count FROM agent_runs WHERE status = 'failed'").get() as { count: number }).count, 2);
+});
+
+test("agent passes channel media delivery into the tool context", async () => {
+  const database = openDatabase(":memory:");
+  databases.push(database);
+  const clock = new FrozenClock(now);
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const delivered: OutboundMedia[] = [];
+  const channel: Channel = {
+    sendReply: async () => {},
+    sendProactive: async () => {},
+    sendMedia: async (_userId, media) => { delivered.push(media); return "media"; },
+  };
+  const probe: ToolDefinition = {
+    name: "send_probe",
+    description: "Probe media delivery.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    argumentSchema: z.object({}).strict(),
+    async execute(_arguments_, context) {
+      return context.sendMedia ? await context.sendMedia({ kind: "video", url: "https://cdn/v.mp4" }) : "none";
+    },
+  };
+  const fake = new FakeLLMProvider();
+  const context = new ContextBuilder(memory, clock, "Fanya persona", "Safety rules", "Tool guidance");
+  const agent = new Agent(fake, memory, new ToolRegistry([probe]), channel, context, clock, "test-model");
+  memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "kirim vid" });
+  fake.enqueue({ content: null, toolCalls: [{ id: "media-call", name: "send_probe", arguments: {} }] });
+  fake.enqueue({ content: "sudah dikirim", toolCalls: [] });
+
+  await agent.runInbound({ id: "inbound-media", userId: owner.id, text: "kirim vid", receivedAt: now });
+
+  assert.deepEqual(delivered, [{ kind: "video", url: "https://cdn/v.mp4" }]);
+});
+
+test("greeting wakeup tells the model the correct time slot", async () => {
+  const { agent, fake, owner } = setup();
+  fake.enqueue({ content: "malam", toolCalls: [] });
+
+  await agent.runWakeup({ userId: owner.id, triggerType: "greeting", greeting: "night" });
+
+  const turn = fake.getRequests()[0]?.messages.at(-1)?.content ?? "";
+  assert.match(turn, /malam/u);
+  assert.doesNotMatch(turn, /pagi/u);
+});
+
+test("context includes a persisted inbound message exactly once", async () => {
+  const database = openDatabase(":memory:");
+  databases.push(database);
+  const clock = new FrozenClock(now);
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const stored = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "Halo" });
+  const fake = new FakeLLMProvider();
+  const context = new ContextBuilder(memory, clock, "Fanya persona", "Safety rules", "Tool guidance");
+  const agent = new Agent(fake, memory, new ToolRegistry([]), new TestChannel(), context, clock, "test-model");
+  fake.enqueue({ content: "Halo juga", toolCalls: [] });
+
+  await agent.runInbound({ id: "inbound-once", userId: owner.id, text: "Halo", receivedAt: now, storedMessageId: stored.id });
+
+  const messages = fake.getRequests()[0]?.messages ?? [];
+  assert.equal(messages.filter((message) => message.role === "user" && message.content === "Halo").length, 1);
 });
 
 test("context includes complete PRD dynamic blocks and honors agenda/history boundaries", async () => {

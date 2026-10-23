@@ -66,7 +66,7 @@ export class HeartbeatEngine {
     if (state.unansweredCount >= this.config.heartbeat.maxUnansweredProactive) return;
     const greeting = local.hour < 12 ? "morning" : local.hour >= 18 ? "night" : undefined;
     if (greeting && this.memory.claimProactiveEvent(userId, greeting, local.date)) {
-      await this.wake(userId, { userId, triggerType: "greeting" }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
+      await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
       return;
     }
     const idleMs = this.config.heartbeat.spontaneousIdleHours * hourMs;
