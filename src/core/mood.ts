@@ -13,14 +13,16 @@ export interface MoodState {
 const missYouThresholdMs = 8 * 3_600_000;
 const rudeDelta = -0.1;
 const kindDelta = 0.05;
-const cuekPhrases = ["ntahlah", "males", "diem aja", "terserah"];
+const affectionBaseline = 0.7;
+const affectionTauMs = 6 * 3_600_000;
+const ngambekDurationMs = 5 * 3_600_000;
 // ponytail: ngambek influence is log-only until a calibration log is reviewed and the
 // wording is tuned; remove the console.warn and flip this to true once calibrated.
 const ngambekInfluenceEnabled = false;
 
 export function computeMood(input: { now: number; timeZone: string; lastUserMessageAt: number | null; state: PersonaState }): MoodState {
   const hour = localHour(input.now, input.timeZone);
-  const energy: Energy = hour < 7 ? "rendah" : hour >= 17 && hour < 21 ? "hangat" : "sedang";
+  const energy: Energy = hour < 7 || hour >= 21 ? "rendah" : hour >= 17 ? "hangat" : "sedang";
   const missYou = input.lastUserMessageAt !== null && input.now - input.lastUserMessageAt > missYouThresholdMs;
   const rawNgambek = input.state.ngambekUntil !== null && input.now < input.state.ngambekUntil;
   if (rawNgambek && !ngambekInfluenceEnabled) console.warn("[mood] ngambek decision", { now: input.now });
@@ -29,12 +31,26 @@ export function computeMood(input: { now: number; timeZone: string; lastUserMess
   return { energy, missYou, ngambek, affection, cue: buildCue(energy, missYou, ngambek, affection) };
 }
 
-export function applyOwnerSentiment(state: PersonaState, text: string, _now: number): PersonaState {
+export function applyOwnerSentiment(state: PersonaState, text: string, now: number): PersonaState {
   if (text.trimStart().startsWith("[SYSTEM")) return state;
   const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
-  const cuek = normalized === "gpp" || cuekPhrases.some((phrase) => normalized.includes(phrase));
-  const affection = clamp(state.affection + (cuek ? rudeDelta : kindDelta), 0, 1);
-  return { ...state, affection };
+  const cuek = isCuek(normalized);
+  const decayed = decayAffection(state.affection, state.updatedAt, now);
+  const affection = clamp(decayed + (cuek ? rudeDelta : kindDelta), 0, 1);
+  return { ...state, affection, ngambekUntil: cuek ? now + ngambekDurationMs : null, updatedAt: now };
+}
+
+function isCuek(normalized: string): boolean {
+  if (/^gpp[.!?]*$/u.test(normalized)) return true;
+  if (/\b(diem aja)\b/u.test(normalized)) return true;
+  return normalized.split(" ").some((token) => /^(ntahlah|males|terserah)[.!?]*$/u.test(token));
+}
+
+function decayAffection(affection: number, updatedAt: number, now: number): number {
+  if (!Number.isFinite(affection)) return affectionBaseline;
+  const elapsed = now - updatedAt;
+  if (!Number.isFinite(elapsed) || elapsed <= 0) return affection;
+  return affectionBaseline + (affection - affectionBaseline) * Math.exp(-elapsed / affectionTauMs);
 }
 
 function localHour(now: number, timeZone: string): number {

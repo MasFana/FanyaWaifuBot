@@ -188,7 +188,7 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
   memory.upsertCommitment(owner.id, { title: "Batas tiga hari", eventAt: now + 3 * 86_400_000, contextNotes: "masuk" });
   memory.upsertCommitment(owner.id, { title: "Terlalu jauh", eventAt: now + 3 * 86_400_000 + 1, contextNotes: "jangan masuk" });
   database.prepare("UPDATE users SET last_user_message_at = ? WHERE id = ?").run(now - 80 * 60_000, owner.id);
-  memory.setPersonaState(owner.id, { ...defaultPersonaState, affection: 0.4 });
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, affection: 0.4, recentOpenings: ["halo"] });
   database.prepare("UPDATE conversations SET summary = ? WHERE user_id = ?").run("Ringkasan lama", owner.id);
   for (let index = 0; index < 21; index += 1) memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: `riwayat-${index}` });
   const builder = new ContextBuilder(memory, new FrozenClock(now), "Persona", "Guardrails", "Tools");
@@ -200,4 +200,5 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
   assert.match(text, /1 jam 20 menit yang lalu.*Suasana hati sekarang: hangat; afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
   assert.doesNotMatch(text, /Terlalu jauh|riwayat-0/u);
   assert.match(text, /riwayat-20/u);
+  assert.match(text, /Hindari mengulang: pembuka halo;/u);
 });

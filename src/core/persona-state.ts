@@ -6,6 +6,7 @@ export interface PersonaState {
   recentOpenings: string[];
   recentEndings: string[];
   recentEmojis: string[];
+  updatedAt: number;
 }
 
 export interface Traits {
@@ -14,13 +15,14 @@ export interface Traits {
   emojis: string[];
 }
 
-export const defaultPersonaState: PersonaState = {
+export const defaultPersonaState: PersonaState = Object.freeze({
   affection: 0.7,
   ngambekUntil: null,
   recentOpenings: [],
   recentEndings: [],
   recentEmojis: [],
-};
+  updatedAt: 0,
+});
 
 const personaStateSchema = z.object({
   affection: z.number(),
@@ -28,19 +30,20 @@ const personaStateSchema = z.object({
   recentOpenings: z.array(z.string()),
   recentEndings: z.array(z.string()),
   recentEmojis: z.array(z.string()),
+  updatedAt: z.number().default(0),
 });
 
-const emojiPattern = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu;
+const emojiPattern = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\u{FE0F}?/gu;
 const edgePunctuation = /^[\p{P}]+|[\p{P}]+$/gu;
 const maxOpeningWords = 3;
 
 export function parsePersonaState(json: string | null): PersonaState {
-  if (json === null) return defaultPersonaState;
+  if (json === null) return clonePersonaState(defaultPersonaState);
   try {
     const parsed = personaStateSchema.safeParse(JSON.parse(json));
-    return parsed.success ? parsed.data : defaultPersonaState;
+    return parsed.success ? parsed.data : clonePersonaState(defaultPersonaState);
   } catch {
-    return defaultPersonaState;
+    return clonePersonaState(defaultPersonaState);
   }
 }
 
@@ -63,8 +66,23 @@ export function mergeTraits(state: PersonaState, traits: Traits, cap = 5): Perso
 }
 
 function append(existing: readonly string[], incoming: readonly string[], cap: number): string[] {
-  const added = incoming.filter((value) => value.length > 0);
-  return [...existing, ...added].slice(-cap);
+  const merged = [...existing];
+  for (const value of incoming) {
+    if (value.length === 0) continue;
+    const duplicate = merged.indexOf(value);
+    if (duplicate >= 0) merged.splice(duplicate, 1);
+    merged.push(value);
+  }
+  return merged.slice(-cap);
+}
+
+function clonePersonaState(state: PersonaState): PersonaState {
+  return {
+    ...state,
+    recentOpenings: [...state.recentOpenings],
+    recentEndings: [...state.recentEndings],
+    recentEmojis: [...state.recentEmojis],
+  };
 }
 
 function cleanWord(word: string): string {

@@ -44,7 +44,7 @@ export class ContextBuilder {
       `Fakta aktif:\n${exported.facts.map((fact) => `- ${fact.content}`).join("\n") || "- Belum ada"}`,
       `Agenda H-1 s/d H+3:\n${agenda.map((item) => `- ${item.title}; acara: ${formatTime(item.eventAt, exported.owner.timezone)}; ingatkan: ${formatTime(item.remindAt, exported.owner.timezone)}; tindak lanjut: ${formatTime(item.followUpAt, exported.owner.timezone)}; konteks: ${item.contextNotes}`).join("\n") || "- Tidak ada"}`,
       `Ringkasan percakapan: ${state.summary ?? "Belum ada ringkasan."}`,
-      `Hindari mengulang: ${personaState.recentEndings.length === 0 ? "belum ada" : personaState.recentEndings.join(", ")}; emoji terpakai: ${personaState.recentEmojis.join(", ") || "belum ada"}`,
+      `Hindari mengulang: pembuka ${list(personaState.recentOpenings)}; akhiran ${list(personaState.recentEndings)}; emoji terpakai ${list(personaState.recentEmojis)}`,
     ].join("\n\n");
     const history = pairedHistory(priorMessages(exported.messages, input.excludeMessageId).slice(-20));
     const turn = input.inboundText ?? `[SYSTEM WAKEUP]\n${input.wakeup ?? "Mulai percakapan proaktif sesuai pemicu."}`;
@@ -84,4 +84,8 @@ function formatElapsed(milliseconds: number): string {
   const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
   if (minutes < 60) return `${minutes} menit yang lalu`;
   return `${Math.floor(minutes / 60)} jam ${minutes % 60} menit yang lalu`;
+}
+
+function list(values: readonly string[]): string {
+  return values.length === 0 ? "belum ada" : values.join(", ");
 }
