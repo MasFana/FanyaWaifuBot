@@ -1,5 +1,6 @@
 import type { Clock } from "./clock.js";
 import type { ContextBuilder } from "./context.js";
+import { applyOwnerSentiment } from "./mood.js";
 import { extractTraits, mergeTraits } from "./persona-state.js";
 import type { Channel, InboundEvent, LLMMessage, ToolContext, WakeupEvent } from "./types.js";
 import type { LLMProvider } from "../llm/provider.js";
@@ -23,6 +24,10 @@ export class Agent {
   ) {}
 
   async runInbound(event: InboundEvent): Promise<void> {
+    if (event.text.trim().length > 0 && !event.text.trimStart().startsWith("[SYSTEM")) {
+      const state = this.memory.getPersonaState(event.userId);
+      this.memory.setPersonaState(event.userId, applyOwnerSentiment(state, event.text, this.clock.now()));
+    }
     const outcome = await this.run(event.userId, "inbound", {
       inboundText: event.text,
       ...(event.storedMessageId === undefined ? {} : { excludeMessageId: event.storedMessageId }),

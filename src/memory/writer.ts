@@ -5,7 +5,6 @@ import type { MemoryService } from "./service.js";
 
 const extractionSchema = z.object({
   facts: z.array(z.object({ content: z.string().min(1), category: z.string().min(1), origin: z.enum(["stated", "inferred"]) }).strict()).default([]),
-  mood: z.string().min(1).optional(),
   commitments: z.array(z.object({
     title: z.string().min(1),
     eventAt: z.number().int(),
@@ -40,7 +39,6 @@ export class PostTurnWriter {
       const parsed = extractionSchema.safeParse(JSON.parse(response.content) as unknown);
       if (!parsed.success) return;
       for (const fact of parsed.data.facts) this.memory.upsertFact(input.userId, fact);
-      if (parsed.data.mood !== undefined) this.memory.setMood(input.userId, parsed.data.mood);
       for (const commitment of parsed.data.commitments) {
         if (commitment.eventAt <= this.clock.now()) continue;
         this.memory.upsertCommitment(input.userId, {

@@ -75,7 +75,6 @@ export interface OwnerExport {
 }
 
 export interface PromptState {
-  mood: string | null;
   lastUserMessageAt: number | null;
   summary: string | null;
 }
@@ -331,9 +330,9 @@ export class MemoryService {
   }
 
   getPromptState(userId: string): PromptState {
-    const owner = this.database.prepare("SELECT current_mood, last_user_message_at FROM users WHERE id = ?").get(userId) as { current_mood: string | null; last_user_message_at: number | null } | undefined;
+    const owner = this.database.prepare("SELECT last_user_message_at FROM users WHERE id = ?").get(userId) as { last_user_message_at: number | null } | undefined;
     const conversation = this.database.prepare("SELECT summary FROM conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1").get(userId) as { summary: string | null } | undefined;
-    return { mood: owner?.current_mood ?? null, lastUserMessageAt: owner?.last_user_message_at ?? null, summary: conversation?.summary ?? null };
+    return { lastUserMessageAt: owner?.last_user_message_at ?? null, summary: conversation?.summary ?? null };
   }
 
   latestOwnerMessage(userId: string): StoredMessage | undefined {

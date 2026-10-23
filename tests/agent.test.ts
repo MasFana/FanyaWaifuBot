@@ -8,6 +8,7 @@ import { ContextBuilder } from "../src/core/context.js";
 import type { Channel, InboundEvent, OutboundMedia, ToolDefinition } from "../src/core/types.js";
 import { migrate, openDatabase } from "../src/db/index.js";
 import { FakeLLMProvider } from "../src/llm/fake.js";
+import { defaultPersonaState } from "../src/core/persona-state.js";
 import { MemoryService } from "../src/memory/service.js";
 import { ToolRegistry, createBuiltinTools } from "../src/tools/index.js";
 
@@ -186,7 +187,8 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
   memory.upsertCommitment(owner.id, { title: "Presentasi", eventAt: now + 60 * 60_000, remindAt: now + 30 * 60_000, followUpAt: now + 2 * 60 * 60_000, contextNotes: "bawa slide" });
   memory.upsertCommitment(owner.id, { title: "Batas tiga hari", eventAt: now + 3 * 86_400_000, contextNotes: "masuk" });
   memory.upsertCommitment(owner.id, { title: "Terlalu jauh", eventAt: now + 3 * 86_400_000 + 1, contextNotes: "jangan masuk" });
-  database.prepare("UPDATE users SET current_mood = ?, last_user_message_at = ? WHERE id = ?").run("capek", now - 80 * 60_000, owner.id);
+  database.prepare("UPDATE users SET last_user_message_at = ? WHERE id = ?").run(now - 80 * 60_000, owner.id);
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, affection: 0.4 });
   database.prepare("UPDATE conversations SET summary = ? WHERE user_id = ?").run("Ringkasan lama", owner.id);
   for (let index = 0; index < 21; index += 1) memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: `riwayat-${index}` });
   const builder = new ContextBuilder(memory, new FrozenClock(now), "Persona", "Guardrails", "Tools");
@@ -195,7 +197,7 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
 
   const text = messages.map((message) => message.content).join("\n");
   assert.match(text, /Persona.*Guardrails.*Tools/us);
-  assert.match(text, /1 jam 20 menit yang lalu.*capek.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
+  assert.match(text, /1 jam 20 menit yang lalu.*Suasana hati sekarang: hangat; afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
   assert.doesNotMatch(text, /Terlalu jauh|riwayat-0/u);
   assert.match(text, /riwayat-20/u);
 });

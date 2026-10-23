@@ -30,12 +30,11 @@ function setup() {
   return { clock, extractor, memory, owner };
 }
 
-test("writer extracts owner facts, mood, and future schedule with default timing", async () => {
+test("writer extracts owner facts and future schedule with default timing", async () => {
   const { clock, extractor, memory, owner } = setup();
   const eventAt = now + 21 * 60 * 60_000;
   extractor.enqueue({ content: JSON.stringify({
     facts: [{ content: "Suka teh hijau", category: "preferensi", origin: "stated" }],
-    mood: "bersemangat",
     commitments: [{ title: "Presentasi proyek", eventAt, contextNotes: "siapkan slide" }],
   }), toolCalls: [] });
   const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
@@ -43,7 +42,6 @@ test("writer extracts owner facts, mood, and future schedule with default timing
   await writer.enqueue({ userId: owner.id, ownerMessage: "Besok jam 10 aku presentasi proyek", messageId: "message-1" });
 
   assert.equal(memory.listActiveFacts(owner.id)[0]?.content, "Suka teh hijau");
-  assert.equal(memory.getPromptState(owner.id).mood, "bersemangat");
   const commitment = memory.listPendingCommitments(owner.id)[0];
   assert.equal(commitment?.title, "Presentasi proyek");
   assert.equal(commitment?.remindAt, eventAt - 75 * 60_000);
@@ -61,7 +59,6 @@ test("writer ignores malformed output and past schedules", async () => {
 
   assert.equal(memory.listActiveFacts(owner.id).length, 0);
   assert.equal(memory.listPendingCommitments(owner.id).length, 0);
-  assert.equal(memory.getPromptState(owner.id).mood, null);
 });
 
 test("writer preserves valid extraction fields when one commitment is past", async () => {
@@ -69,7 +66,6 @@ test("writer preserves valid extraction fields when one commitment is past", asy
   const writer = new PostTurnWriter(extractor, memory, new FrozenClock(now), "extractor-model");
   extractor.enqueue({ content: JSON.stringify({
     facts: [{ content: "Suka mangga", category: "preferensi", origin: "stated" }],
-    mood: "tenang",
     commitments: [
       { title: "Kemarin", eventAt: now - 1 },
       { title: "Rapat besok", eventAt: now + 60_000 },
@@ -79,7 +75,6 @@ test("writer preserves valid extraction fields when one commitment is past", asy
   await writer.enqueue({ userId: owner.id, ownerMessage: "campuran", messageId: "message-1" });
 
   assert.equal(memory.listActiveFacts(owner.id)[0]?.content, "Suka mangga");
-  assert.equal(memory.getPromptState(owner.id).mood, "tenang");
   assert.deepEqual(memory.listPendingCommitments(owner.id).map((item) => item.title), ["Rapat besok"]);
 });
 
