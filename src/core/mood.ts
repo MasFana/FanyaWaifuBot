@@ -14,12 +14,17 @@ const missYouThresholdMs = 8 * 3_600_000;
 const rudeDelta = -0.1;
 const kindDelta = 0.05;
 const cuekPhrases = ["ntahlah", "males", "diem aja", "terserah"];
+// ponytail: ngambek influence is log-only until a calibration log is reviewed and the
+// wording is tuned; remove the console.warn and flip this to true once calibrated.
+const ngambekInfluenceEnabled = false;
 
 export function computeMood(input: { now: number; timeZone: string; lastUserMessageAt: number | null; state: PersonaState }): MoodState {
   const hour = localHour(input.now, input.timeZone);
   const energy: Energy = hour < 7 ? "rendah" : hour >= 17 && hour < 21 ? "hangat" : "sedang";
   const missYou = input.lastUserMessageAt !== null && input.now - input.lastUserMessageAt > missYouThresholdMs;
-  const ngambek = input.state.ngambekUntil !== null && input.now < input.state.ngambekUntil;
+  const rawNgambek = input.state.ngambekUntil !== null && input.now < input.state.ngambekUntil;
+  if (rawNgambek && !ngambekInfluenceEnabled) console.warn("[mood] ngambek decision", { now: input.now });
+  const ngambek = ngambekInfluenceEnabled ? rawNgambek : false;
   const affection = Number.isFinite(input.state.affection) ? input.state.affection : 0;
   return { energy, missYou, ngambek, affection, cue: buildCue(energy, missYou, ngambek, affection) };
 }

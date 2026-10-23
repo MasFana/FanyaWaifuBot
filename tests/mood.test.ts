@@ -28,3 +28,11 @@ test("system turns are ignored, rude text lowers affection", () => {
   const rude = applyOwnerSentiment(start, "ntahlah males", 0);
   assert.ok(rude.affection < start.affection);
 });
+
+test("ngambek influence is off while flag disabled", () => {
+  const now = Date.UTC(2026, 9, 23, 5, 0);
+  const state = { ...defaultPersonaState, ngambekUntil: now + 3_600_000 };
+  const mood = computeMood({ now, timeZone: tz, lastUserMessageAt: now - 1_000, state });
+  assert.equal(mood.ngambek, false);
+  assert.doesNotMatch(mood.cue, /ngambek|dingin|cuek/u);
+});
