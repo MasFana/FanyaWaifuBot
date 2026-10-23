@@ -1,13 +1,29 @@
 import { z } from "zod";
 
+export interface Activity {
+  name: string;
+  endsAt: number;
+}
+
+export interface Drives {
+  wantCompany: number;
+  wantToShare: number;
+  focus: number;
+  boundary: number;
+}
+
 export interface PersonaState {
   affection: number;
   ngambekUntil: number | null;
   recentOpenings: string[];
   recentEndings: string[];
   recentEmojis: string[];
+  activity: Activity | null;
+  drives: Drives;
   updatedAt: number;
 }
+
+export const defaultDrives: Drives = Object.freeze({ wantCompany: 0, wantToShare: 0, focus: 0, boundary: 0 });
 
 export interface Traits {
   opening: string;
@@ -21,7 +37,17 @@ export const defaultPersonaState: PersonaState = Object.freeze({
   recentOpenings: [],
   recentEndings: [],
   recentEmojis: [],
+  activity: null,
+  drives: defaultDrives,
   updatedAt: 0,
+});
+
+const activitySchema = z.object({ name: z.string(), endsAt: z.number() });
+const drivesSchema = z.object({
+  wantCompany: z.number(),
+  wantToShare: z.number(),
+  focus: z.number(),
+  boundary: z.number(),
 });
 
 const personaStateSchema = z.object({
@@ -30,6 +56,8 @@ const personaStateSchema = z.object({
   recentOpenings: z.array(z.string()),
   recentEndings: z.array(z.string()),
   recentEmojis: z.array(z.string()),
+  activity: activitySchema.nullable().default(null),
+  drives: drivesSchema.default(() => ({ ...defaultDrives })),
   updatedAt: z.number().default(0),
 });
 
@@ -82,6 +110,8 @@ function clonePersonaState(state: PersonaState): PersonaState {
     recentOpenings: [...state.recentOpenings],
     recentEndings: [...state.recentEndings],
     recentEmojis: [...state.recentEmojis],
+    activity: state.activity === null ? null : { ...state.activity },
+    drives: { ...state.drives },
   };
 }
 
