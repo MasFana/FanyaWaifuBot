@@ -24,6 +24,11 @@ const environmentSchema = z.object({
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   SPONTANEOUS_IDLE_HOURS: z.coerce.number().positive().default(6),
   MAX_UNANSWERED_PROACTIVE: z.coerce.number().int().nonnegative().default(2),
+  REPLY_DEBOUNCE_MS: z.coerce.number().int().nonnegative().default(4_000),
+  REPLY_DEFER_EXTRA_MS: z.coerce.number().int().nonnegative().default(60_000),
+  REPLY_MAX_BUBBLES: z.coerce.number().int().positive().default(4),
+  FOCUS_DEFER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
+  NGAMBEK_ENABLED: z.string().default("false").transform((value) => value.toLowerCase() === "true"),
   DATABASE_PATH: z.string().min(1).default("./data/fanya.db"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -48,6 +53,13 @@ export interface AppConfig {
     quietHours: { start: string; end: string };
     spontaneousIdleHours: number;
     maxUnansweredProactive: number;
+  };
+  replies: {
+    debounceMs: number;
+    deferExtraMs: number;
+    maxBubbles: number;
+    focusDeferThreshold: number;
+    ngambekEnabled: boolean;
   };
   databasePath: string;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -85,6 +97,13 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
       quietHours: { start: parsed.QUIET_HOURS_START, end: parsed.QUIET_HOURS_END },
       spontaneousIdleHours: parsed.SPONTANEOUS_IDLE_HOURS,
       maxUnansweredProactive: parsed.MAX_UNANSWERED_PROACTIVE,
+    },
+    replies: {
+      debounceMs: parsed.REPLY_DEBOUNCE_MS,
+      deferExtraMs: parsed.REPLY_DEFER_EXTRA_MS,
+      maxBubbles: parsed.REPLY_MAX_BUBBLES,
+      focusDeferThreshold: parsed.FOCUS_DEFER_THRESHOLD,
+      ngambekEnabled: parsed.NGAMBEK_ENABLED,
     },
     databasePath: parsed.DATABASE_PATH,
     logLevel: parsed.LOG_LEVEL,

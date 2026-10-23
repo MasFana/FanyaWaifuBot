@@ -84,6 +84,16 @@ test("accepted ordinary text persists, resets unanswered count, runs agent, and 
   assert.deepEqual(bot.actions.slice(-2), ["typing", "typing"]);
 });
 
+test("caps delivery at three bubbles and merges overflow into the last", async () => {
+  const { channel, memory, bot } = setup();
+  memory.ensureOwner("telegram", "123");
+
+  await channel.sendReply("123", "Satu\n\nDua\n\nTiga\n\nEmpat\n\nLima");
+
+  assert.deepEqual(bot.messages, ["Satu", "Dua", "Tiga\nEmpat\nLima"]);
+  assert.equal(bot.actions.length, 3);
+});
+
 test("forget rejects missing or whitespace topic without service mutation", async () => {
   const { channel, memory, bot } = setup();
   memory.ensureOwner("telegram", "123");

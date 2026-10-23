@@ -74,7 +74,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
     const channel = new TelegramChannel(config, memory, clock, options.bot, options.delay, queue);
     const agent = new Agent(provider, memory, tools, channel, context, clock, config.llm.model, writer);
     channel.setAgent(agent);
-    const heartbeat = new HeartbeatEngine(memory, agent, clock, config, queue);
+    const heartbeat = new HeartbeatEngine(memory, agent, clock, config, queue, (userId) => channel.flushPending(userId));
     const ownerId = config.telegram.ownerId ?? memory.resolveClaimedOwner("telegram")?.externalId ?? "";
     let shutdownPromise: Promise<void> | undefined;
     const shutdown = (): Promise<void> => shutdownPromise ??= (async () => {

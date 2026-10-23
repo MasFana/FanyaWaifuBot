@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import { afterEach, test } from "node:test";
+import type Database from "better-sqlite3";
+import { FrozenClock } from "../src/core/clock.js";
+import { openDatabase, migrate } from "../src/db/index.js";
+import { MemoryService } from "../src/memory/service.js";
+import { TelegramChannel, type TelegramBot } from "../src/channels/telegram.js";
+import { createTestConfig } from "./helpers.js";
+
+const databases: Database.Database[] = [];
+afterEach(() => { for (const database of databases.splice(0)) database.close(); });
+
+class FakeBot implements TelegramBot {
+  readonly messages: string[] = [];
+  async sendMessage(_chatId: string, text: string): Promise<void> { this.messages.push(text); }
+  async sendChatAction(): Promise<void> {}
+  async sendDocument(): Promise<void> {}
+  async sendMedia(): Promise<void> {}
+  async start(): Promise<void> {}
+  stop(): void {}
+}
+
+function setup(debounceMs: number) {
+  const database = openDatabase(":memory:");
+  databases.push(database);
+  const clock = new FrozenClock(1_729_648_000_000);
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  memory.ensureOwner("telegram", "123");
+  const bot = new FakeBot();
+  const base = createTestConfig();
+  const channel = new TelegramChannel(
+    { ...base, telegram: { botToken: "test-token", ownerId: "123" }, replies: { ...base.replies, debounceMs } },
+    memory, clock, bot, async () => {},
+  );
+  const turns: string[] = [];
+  channel.setAgent({ runInbound: async (event) => { turns.push(event.text); } });
+  return { channel, memory, bot, turns };
+}
+
+test("burst of owner messages within the debounce window becomes one turn", async () => {
+  const { channel, memory, turns } = setup(10_000);
+
+  await channel.receive({ id: "m1", fromId: "123", text: "aku tadi makan pedes banget" });
+  await channel.receive({ id: "m2", fromId: "123", text: "kek" });
+  await channel.receive({ id: "m3", fromId: "123", text: "jir" });
+
+  assert.equal(turns.length, 0);
+
+  await channel.flushPending("123");
+
+  assert.deepEqual(turns, ["aku tadi makan pedes banget\nkek\njir"]);
+  assert.equal(memory.exportOwner("123").messages.filter((message) => message.role === "user").length, 3);
+});
+
+test("command flushes the pending burst before running itself", async () => {
+  const { channel, turns } = setup(10_000);
+
+  await channel.receive({ id: "m1", fromId: "123", text: "halo dulu ya" });
+  await channel.receive({ id: "c1", fromId: "123", text: "/agenda" });
+
+  assert.ok(turns.some((turn) => turn.includes("halo dulu ya")), "burst flushed first");
+  assert.ok(turns.some((turn) => turn.startsWith("[SYSTEM COMMAND")), "command then ran");
+});

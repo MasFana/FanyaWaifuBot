@@ -16,6 +16,7 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
       spontaneousIdleHours: 6,
       maxUnansweredProactive: 2,
     },
+    replies: { debounceMs: 0, deferExtraMs: 60_000, maxBubbles: 3, focusDeferThreshold: 0.6, ngambekEnabled: false },
     databasePath: ":memory:",
     logLevel: "error",
     ...overrides,

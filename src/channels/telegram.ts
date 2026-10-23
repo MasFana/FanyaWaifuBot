@@ -9,6 +9,12 @@ const channelName = "telegram";
 const quietTime = /^([01]\d|2[0-3]):[0-5]\d$/;
 const skipProactiveToken = "[SKIP_PROACTIVE]";
 
+interface PendingBurst {
+  texts: string[];
+  ids: string[];
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 export interface TelegramBot {
   sendMessage(chatId: string, text: string): Promise<void>;
   sendChatAction(chatId: string, action: "typing"): Promise<void>;
@@ -87,6 +93,7 @@ class GrammyBot implements TelegramBot {
 export class TelegramChannel {
   private agent: TelegramAgent | undefined;
   private owner: { externalId: string; id: string } | undefined;
+  private readonly pending = new Map<string, PendingBurst>();
 
   constructor(
     private readonly config: AppConfig,
@@ -132,25 +139,64 @@ export class TelegramChannel {
     const owner = this.authorize(update.fromId, text);
     if (!owner) return;
 
-    return this.queue.enqueue(owner.id, async () => {
-      const event: InboundEvent = {
-        id: update.id,
-        userId: owner.id,
-        text,
-        receivedAt: this.clock.now(),
-      };
-      if (!this.memory.recordInbound(channelName, event)) return;
-      this.memory.resetUnansweredProactiveCount(owner.id);
-      if (await this.handleCommand(owner.id, event)) return;
+    const event: InboundEvent = {
+      id: update.id,
+      userId: owner.id,
+      text,
+      receivedAt: this.clock.now(),
+    };
+    if (!this.memory.recordInbound(channelName, event)) return;
+    this.memory.resetUnansweredProactiveCount(owner.id);
 
-      const message = this.memory.appendMessage(owner.id, {
-        channel: channelName,
-        role: "user",
-        content: text,
-      });
-      this.memory.recordOwnerActivity(owner.id);
-      await this.agent?.runInbound({ ...event, storedMessageId: message.id });
+    if (text.trimStart().startsWith("/")) {
+      await this.flushPending(owner.id);
+      await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, event); });
+      return;
+    }
+
+    const message = this.memory.appendMessage(owner.id, {
+      channel: channelName,
+      role: "user",
+      content: text,
     });
+    this.memory.recordOwnerActivity(owner.id);
+
+    const burst = this.pending.get(owner.id) ?? { texts: [], ids: [] };
+    burst.texts.push(text);
+    burst.ids.push(message.id);
+    this.pending.set(owner.id, burst);
+
+    if (this.config.replies.debounceMs <= 0) {
+      await this.flushPending(owner.id);
+      return;
+    }
+    if (burst.timer) clearTimeout(burst.timer);
+    burst.timer = setTimeout(() => { void this.flushPending(owner.id); }, this.config.replies.debounceMs);
+  }
+
+  /**
+   * Menggabungkan pesan owner yang beruntun (burst) menjadi satu giliran, lalu
+   * menjalankannya sebagai satu agent turn. Dipanggil oleh timer debounce, oleh
+   * command (agar burst lama tidak hilang), dan oleh heartbeat sebelum wakeup.
+   */
+  async flushPending(userId?: string): Promise<void> {
+    const owners = userId === undefined ? [...this.pending.keys()] : [userId];
+    for (const id of owners) {
+      const burst = this.pending.get(id);
+      if (burst === undefined || burst.texts.length === 0) continue;
+      if (burst.timer) clearTimeout(burst.timer);
+      this.pending.delete(id);
+      const lastId = burst.ids.at(-1);
+      const event: InboundEvent = {
+        id: lastId ?? burst.texts.join("\n"),
+        userId: id,
+        text: burst.texts.join("\n"),
+        receivedAt: this.clock.now(),
+        ...(lastId === undefined ? {} : { storedMessageId: lastId }),
+        storedMessageIds: burst.ids,
+      };
+      await this.queue.enqueue(id, async () => { await this.agent?.runInbound(event); });
+    }
   }
 
   async sendReply(userId: string, text: string): Promise<void> {
@@ -339,7 +385,7 @@ export class TelegramChannel {
 
   private async deliver(userId: string, text: string): Promise<void> {
     const chatId = this.resolveChatId(userId);
-    const bubbles = splitDynamicBubbles(text);
+    const bubbles = splitDynamicBubbles(text, this.config.replies.maxBubbles);
 
     for (let index = 0; index < bubbles.length; index++) {
       const bubble = bubbles[index];
@@ -362,8 +408,9 @@ export class TelegramChannel {
  * 1. Menghormati pemisah paragraf (\n\n) dari LLM.
  * 2. Jika ada 1 balon yang terlalu panjang (> 220 karakter), otomatis memecahnya
  *    pada batas kalimat agar tidak terlihat seperti tembok teks (wall of text).
+ * 3. Semua balon dibatasi maksimum `maxBubbles`; kelebihannya digabung ke balon terakhir.
  */
-function splitDynamicBubbles(rawText: string): string[] {
+function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
   const paragraphs = rawText
     .split(/\r?\n\s*\r?\n/)
     .map((part) => part.trim())
@@ -393,7 +440,12 @@ function splitDynamicBubbles(rawText: string): string[] {
     }
   }
 
-  return bubbles.filter(Boolean);
+  return capBubbles(bubbles.filter(Boolean), maxBubbles);
+}
+
+function capBubbles(bubbles: string[], maxBubbles: number): string[] {
+  if (bubbles.length <= maxBubbles) return bubbles;
+  return [...bubbles.slice(0, maxBubbles - 1), bubbles.slice(maxBubbles - 1).join("\n")];
 }
 
 function humanizeBubble(raw: string): string {

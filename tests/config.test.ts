@@ -26,6 +26,11 @@ test("loadConfig applies PRD defaults to deployment config", () => {
   assert.equal(config.heartbeat.quietHours.end, "06:30");
   assert.equal(config.heartbeat.spontaneousIdleHours, 6);
   assert.equal(config.heartbeat.maxUnansweredProactive, 2);
+  assert.equal(config.replies.debounceMs, 4_000);
+  assert.equal(config.replies.deferExtraMs, 60_000);
+  assert.equal(config.replies.maxBubbles, 4);
+  assert.equal(config.replies.focusDeferThreshold, 0.6);
+  assert.equal(config.replies.ngambekEnabled, false);
 });
 
 test("loadConfig rejects an invalid owner IANA timezone", () => {

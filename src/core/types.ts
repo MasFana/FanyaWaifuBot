@@ -33,6 +33,7 @@ export interface InboundEvent {
   text: string;
   receivedAt: number;
   storedMessageId?: string;
+  storedMessageIds?: readonly string[];
 }
 
 export interface WakeupEvent {
@@ -67,6 +68,7 @@ export interface Channel {
   sendReply(userId: string, text: string): Promise<void>;
   sendProactive(userId: string, text: string): Promise<void>;
   sendMedia?(userId: string, media: OutboundMedia): Promise<MediaDelivery>;
+  flushPending?(userId?: string): Promise<void>;
 }
 
 export interface FactInput {

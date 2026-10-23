@@ -10,6 +10,7 @@ export interface ContextInput {
   inboundText?: string;
   wakeup?: string;
   excludeMessageId?: string;
+  excludeMessageIds?: readonly string[];
 }
 
 export class ContextBuilder {
@@ -46,14 +47,20 @@ export class ContextBuilder {
       `Ringkasan percakapan: ${state.summary ?? "Belum ada ringkasan."}`,
       `Hindari mengulang: pembuka ${list(personaState.recentOpenings)}; akhiran ${list(personaState.recentEndings)}; emoji terpakai ${list(personaState.recentEmojis)}`,
     ].join("\n\n");
-    const history = pairedHistory(priorMessages(exported.messages, input.excludeMessageId).slice(-20));
+    const history = pairedHistory(priorMessages(exported.messages, excludedIds(input)).slice(-20));
     const turn = input.inboundText ?? `[SYSTEM WAKEUP]\n${input.wakeup ?? "Mulai percakapan proaktif sesuai pemicu."}`;
     return [{ role: "system", content: `${this.persona}\n\n${this.guardrails}\n\n${this.toolGuidance}\n\n${dynamic}` }, ...history, { role: "user", content: turn }];
   }
 }
 
-function priorMessages<T extends { id: string }>(messages: readonly T[], excludeMessageId: string | undefined): readonly T[] {
-  return excludeMessageId === undefined ? messages : messages.filter((message) => message.id !== excludeMessageId);
+function excludedIds(input: ContextInput): ReadonlySet<string> {
+  const ids = new Set(input.excludeMessageIds ?? []);
+  if (input.excludeMessageId !== undefined) ids.add(input.excludeMessageId);
+  return ids;
+}
+
+function priorMessages<T extends { id: string }>(messages: readonly T[], exclude: ReadonlySet<string>): readonly T[] {
+  return exclude.size === 0 ? messages : messages.filter((message) => !exclude.has(message.id));
 }
 
 function pairedHistory(messages: readonly import("../memory/service.js").StoredMessage[]): LLMMessage[] {

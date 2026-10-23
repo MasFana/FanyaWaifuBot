@@ -31,6 +31,7 @@ export class Agent {
     const outcome = await this.run(event.userId, "inbound", {
       inboundText: event.text,
       ...(event.storedMessageId === undefined ? {} : { excludeMessageId: event.storedMessageId }),
+      ...(event.storedMessageIds === undefined ? {} : { excludeMessageIds: event.storedMessageIds }),
     });
     const ownerMessage = event.storedMessageId === undefined ? undefined : this.memory.getMessage(event.storedMessageId);
     const ownerContent = ownerMessage?.content;
@@ -45,7 +46,7 @@ export class Agent {
     return this.run(wakeup.userId, wakeup.triggerType, { wakeup: `Trigger: ${wakeup.triggerType}${commitment}${greeting}` });
   }
 
-  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string }): Promise<AgentOutcome> {
+  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string; excludeMessageIds?: readonly string[] }): Promise<AgentOutcome> {
     const runId = this.memory.createAgentRun(userId, trigger, this.model);
     try {
       const messages = await this.context.build({ userId, ...input });

@@ -12,7 +12,7 @@ export class HeartbeatEngine {
   private timer: NodeJS.Timeout | undefined;
   private activeTick: Promise<void> | undefined;
 
-  constructor(private readonly memory: MemoryService, private readonly agent: Pick<Agent, "runWakeup">, private readonly clock: Clock, private readonly config: AppConfig, private readonly queue: OwnerQueue = new OwnerQueue()) {}
+  constructor(private readonly memory: MemoryService, private readonly agent: Pick<Agent, "runWakeup">, private readonly clock: Clock, private readonly config: AppConfig, private readonly queue: OwnerQueue = new OwnerQueue(), private readonly flush?: (userId: string) => Promise<void>) {}
 
   async tick(): Promise<void> {
     if (this.activeTick) return this.activeTick;
@@ -26,6 +26,7 @@ export class HeartbeatEngine {
     try {
       const owner = this.resolveOwner();
       if (!owner) return;
+      await this.flush?.(owner.id);
       for (const commitment of this.memory.claimDueCommitments(this.clock.now(), owner.id)) {
         const triggerType = commitment.kind === "reminder" ? "agenda_reminder" : "agenda_followup";
         try {
