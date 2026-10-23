@@ -138,6 +138,17 @@ test("agent passes channel media delivery into the tool context", async () => {
   assert.deepEqual(delivered, [{ kind: "video", url: "https://cdn/v.mp4" }]);
 });
 
+test("agent records reply traits into persona state after delivery", async () => {
+  const { agent, fake, inbound, memory, owner } = setup();
+  fake.enqueue({ content: "halo 🤍", toolCalls: [] });
+
+  await agent.runInbound(inbound);
+
+  const persona = memory.getPersonaState(owner.id);
+  assert.ok(persona.recentEndings.includes("🤍"));
+  assert.ok(persona.recentEmojis.includes("🤍"));
+});
+
 test("greeting wakeup tells the model the correct time slot", async () => {
   const { agent, fake, owner } = setup();
   fake.enqueue({ content: "malam", toolCalls: [] });

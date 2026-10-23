@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import type Database from "better-sqlite3";
 import { FrozenClock } from "../src/core/clock.js";
+import { defaultPersonaState } from "../src/core/persona-state.js";
 import type { CommitmentInput, FactInput, InboundEvent } from "../src/core/types.js";
 import { migrate, openDatabase } from "../src/db/index.js";
 import { MemoryService } from "../src/memory/service.js";
@@ -46,6 +47,21 @@ test("records inbound once and appends searchable messages in one transaction", 
     database.prepare("SELECT count(*) AS n FROM messages_fts WHERE message_id = ?").get(message.id) as { n: number },
     { n: 1 },
   );
+});
+
+test("round-trips persona state through users.settings_json and defaults on corrupt data", () => {
+  const { database, memory } = setup();
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+
+  assert.deepEqual(memory.getPersonaState(owner.id), defaultPersonaState);
+
+  const state = { ...defaultPersonaState, affection: 0.9, recentEndings: ["halo"], recentEmojis: ["🤍"] };
+  memory.setPersonaState(owner.id, state);
+  assert.deepEqual(memory.getPersonaState(owner.id), state);
+
+  database.prepare("UPDATE users SET settings_json = ? WHERE id = ?").run("{broken", owner.id);
+  assert.deepEqual(memory.getPersonaState(owner.id), defaultPersonaState);
 });
 
 test("replaces matching active fact and keeps current fact searchable", () => {

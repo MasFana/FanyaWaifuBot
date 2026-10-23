@@ -32,6 +32,7 @@ export class ContextBuilder {
   async build(input: ContextInput): Promise<LLMMessage[]> {
     const exported = this.memory.exportOwner(input.userId);
     const state = this.memory.getPromptState(input.userId);
+    const personaState = this.memory.getPersonaState(input.userId);
     const now = this.clock.now();
     const agenda = exported.commitments.filter((item) => item.status === "pending" && item.eventAt !== null && item.eventAt >= now - 86_400_000 && item.eventAt <= now + 3 * 86_400_000);
     const dynamic = [
@@ -41,6 +42,7 @@ export class ContextBuilder {
       `Fakta aktif:\n${exported.facts.map((fact) => `- ${fact.content}`).join("\n") || "- Belum ada"}`,
       `Agenda H-1 s/d H+3:\n${agenda.map((item) => `- ${item.title}; acara: ${formatTime(item.eventAt, exported.owner.timezone)}; ingatkan: ${formatTime(item.remindAt, exported.owner.timezone)}; tindak lanjut: ${formatTime(item.followUpAt, exported.owner.timezone)}; konteks: ${item.contextNotes}`).join("\n") || "- Tidak ada"}`,
       `Ringkasan percakapan: ${state.summary ?? "Belum ada ringkasan."}`,
+      `Hindari mengulang: ${personaState.recentEndings.length === 0 ? "belum ada" : personaState.recentEndings.join(", ")}; emoji terpakai: ${personaState.recentEmojis.join(", ") || "belum ada"}`,
     ].join("\n\n");
     const history = pairedHistory(priorMessages(exported.messages, input.excludeMessageId).slice(-20));
     const turn = input.inboundText ?? `[SYSTEM WAKEUP]\n${input.wakeup ?? "Mulai percakapan proaktif sesuai pemicu."}`;

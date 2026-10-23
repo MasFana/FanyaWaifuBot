@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Clock } from "../core/clock.js";
+import { type PersonaState, parsePersonaState } from "../core/persona-state.js";
 import type { CommitmentInput, FactInput, InboundEvent, ToolCall } from "../core/types.js";
 
 export type FactStatus = "active" | "replaced" | "deleted";
@@ -342,6 +343,15 @@ export class MemoryService {
 
   setMood(userId: string, mood: string): void {
     this.database.prepare("UPDATE users SET current_mood = ?, mood_updated_at = ? WHERE id = ?").run(mood, this.clock.now(), userId);
+  }
+
+  getPersonaState(userId: string): PersonaState {
+    const row = this.database.prepare("SELECT settings_json FROM users WHERE id = ?").get(userId) as { settings_json: string | null } | undefined;
+    return parsePersonaState(row?.settings_json ?? null);
+  }
+
+  setPersonaState(userId: string, state: PersonaState): void {
+    this.database.prepare("UPDATE users SET settings_json = ? WHERE id = ?").run(JSON.stringify(state), userId);
   }
 
   private getOrCreateConversation(userId: string, channel: string): ConversationRow {

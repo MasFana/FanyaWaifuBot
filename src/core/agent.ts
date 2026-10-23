@@ -1,5 +1,6 @@
 import type { Clock } from "./clock.js";
 import type { ContextBuilder } from "./context.js";
+import { extractTraits, mergeTraits } from "./persona-state.js";
 import type { Channel, InboundEvent, LLMMessage, ToolContext, WakeupEvent } from "./types.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { MemoryService } from "../memory/service.js";
@@ -76,6 +77,7 @@ export class Agent {
         if (proactive && response.content?.trim() === "[SKIP_PROACTIVE]") return { status: "skipped" };
         if (response.content) {
           await (proactive ? this.channel.sendProactive(userId, response.content) : this.channel.sendReply(userId, response.content));
+          this.memory.setPersonaState(userId, mergeTraits(this.memory.getPersonaState(userId), extractTraits(response.content)));
         }
         return { status: "completed", delivered: response.content !== null && response.content.trim().length > 0 };
       }
