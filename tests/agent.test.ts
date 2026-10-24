@@ -197,7 +197,8 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
 
   const text = messages.map((message) => message.content).join("\n");
   assert.match(text, /Persona.*Guardrails.*Tools/us);
-  assert.match(text, /1 jam 20 menit yang lalu.*Suasana hati sekarang: hangat; afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
+  assert.match(text, /1 jam 20 menit yang lalu.*Keadaan sekarang:.*energi hangat.*afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
+  assert.doesNotMatch(text, /NaN|Infinity/u);
   assert.doesNotMatch(text, /Terlalu jauh|riwayat-0/u);
   assert.match(text, /riwayat-20/u);
   assert.match(text, /Hindari mengulang: pembuka halo;/u);

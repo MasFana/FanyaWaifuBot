@@ -1,5 +1,6 @@
 import type { Clock } from "./clock.js";
 import { computeMood } from "./mood.js";
+import { renderStateCue, tickLivingState } from "./living-state.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { LLMMessage } from "./types.js";
@@ -37,11 +38,13 @@ export class ContextBuilder {
     const personaState = this.memory.getPersonaState(input.userId);
     const now = this.clock.now();
     const mood = computeMood({ now, timeZone: exported.owner.timezone, lastUserMessageAt: state.lastUserMessageAt, state: personaState });
+    const living = tickLivingState(personaState, { now, lastUserMessageAt: state.lastUserMessageAt, seed: input.userId });
+    this.memory.setPersonaState(input.userId, living);
     const agenda = exported.commitments.filter((item) => item.status === "pending" && item.eventAt !== null && item.eventAt >= now - 86_400_000 && item.eventAt <= now + 3 * 86_400_000);
     const dynamic = [
       `Waktu sekarang: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short", timeZone: exported.owner.timezone }).format(now)}`,
       `Jeda sejak chat terakhir owner: ${state.lastUserMessageAt === null ? "Belum ada" : formatElapsed(now - state.lastUserMessageAt)}`,
-      `Suasana hati sekarang: ${mood.cue}`,
+      `Keadaan sekarang: ${renderStateCue(living, mood)}`,
       `Fakta aktif:\n${exported.facts.map((fact) => `- ${fact.content}`).join("\n") || "- Belum ada"}`,
       `Agenda H-1 s/d H+3:\n${agenda.map((item) => `- ${item.title}; acara: ${formatTime(item.eventAt, exported.owner.timezone)}; ingatkan: ${formatTime(item.remindAt, exported.owner.timezone)}; tindak lanjut: ${formatTime(item.followUpAt, exported.owner.timezone)}; konteks: ${item.contextNotes}`).join("\n") || "- Tidak ada"}`,
       `Ringkasan percakapan: ${state.summary ?? "Belum ada ringkasan."}`,

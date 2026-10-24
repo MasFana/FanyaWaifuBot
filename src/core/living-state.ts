@@ -56,6 +56,7 @@ export function renderStateCue(state: PersonaState, mood: MoodState): string {
   const parts: string[] = [];
   if (state.activity !== null) parts.push(`lagi ${state.activity.name}`);
   parts.push(`energi ${mood.energy}`);
+  parts.push(`afeksi ${Number.isFinite(state.affection) ? state.affection.toFixed(1) : "0.7"}`);
   if (mood.missYou) parts.push("kangen");
 
   const drives = state.drives;
