@@ -4,6 +4,7 @@ import type { Clock } from "../core/clock.js";
 import type { InboundEvent, MediaDelivery, OutboundMedia } from "../core/types.js";
 import type { ForgetResult, MemoryService } from "../memory/service.js";
 import { OwnerQueue } from "../core/owner-queue.js";
+import { decideReply } from "../core/living-state.js";
 
 const channelName = "telegram";
 const quietTime = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -186,6 +187,9 @@ export class TelegramChannel {
       if (burst === undefined || burst.texts.length === 0) continue;
       if (burst.timer) clearTimeout(burst.timer);
       this.pending.delete(id);
+      if (decideReply(this.memory.getPersonaState(id), { focusThreshold: this.config.replies.focusDeferThreshold }) === "defer") {
+        await this.delay(this.config.replies.deferExtraMs);
+      }
       const lastId = burst.ids.at(-1);
       const event: InboundEvent = {
         id: lastId ?? burst.texts.join("\n"),

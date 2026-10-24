@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultPersonaState, parsePersonaState } from "../src/core/persona-state.js";
-import { activityPool, renderStateCue, tickLivingState } from "../src/core/living-state.js";
+import { activityPool, decideReply, renderStateCue, tickLivingState } from "../src/core/living-state.js";
 import { computeMood } from "../src/core/mood.js";
 
 const tz = "Asia/Jakarta";
@@ -57,6 +57,14 @@ test("recent owner activity lowers wantCompany", () => {
   const next = tickLivingState(base, { now, lastUserMessageAt: now, seed: "owner" });
 
   assert.ok(next.drives.wantCompany < 0.9);
+});
+
+test("decideReply defers only when an activity is active and focus is high", () => {
+  const focused = { ...defaultPersonaState, activity: { name: "baca novel bab terakhir", endsAt: now + 3_600_000 }, drives: { wantCompany: 0, wantToShare: 0, focus: 0.9, boundary: 0 } };
+
+  assert.equal(decideReply(focused, { focusThreshold: 0.6 }), "defer");
+  assert.equal(decideReply({ ...focused, activity: null }, { focusThreshold: 0.6 }), "reply");
+  assert.equal(decideReply(defaultPersonaState, { focusThreshold: 0.6 }), "reply");
 });
 
 test("renderStateCue has no NaN or Infinity for default state", () => {
