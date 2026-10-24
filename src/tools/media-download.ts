@@ -192,15 +192,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 async function fetchMedia(platform: Platform, url: string): Promise<unknown> {
-  const response = await fetch(`${baseUrl}/${endpoints[platform]}?url=${encodeURIComponent(url)}`, {
-    headers: {
-      "content-type": "application/json",
-      "user-agent": `btch/${clientVersion}`,
-      "x-client-version": clientVersion,
-    },
-  });
-  if (!response.ok) throw new Error(mediaFailureMessage);
-  return response.json();
+  try {
+    const response = await fetch(`${baseUrl}/${endpoints[platform]}?url=${encodeURIComponent(url)}`, {
+      headers: {
+        "content-type": "application/json",
+        "user-agent": `btch/${clientVersion}`,
+        "x-client-version": clientVersion,
+      },
+    });
+    if (!response.ok) throw new Error(mediaFailureMessage);
+    return await response.json();
+  } catch {
+    throw new Error(mediaFailureMessage);
+  }
 }
 
 function normalizeLink(link: string): string {

@@ -131,6 +131,24 @@ test("download_media reports source errors and media-less payloads as natural me
       downloadMedia.execute({ url: "https://youtu.be/x" }, { userId: "u" }),
       (error: unknown) => {
         assert.ok(error instanceof Error);
+        assert.doesNotMatch(error.message, /Failed to fetch/u);
+        assert.equal(error.message, MEDIA_FAILURE_MESSAGE);
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("download_media turns a raw fetch rejection into the natural failure message", async () => {
+  const restore = stubFetchReject(new TypeError("fetch failed"));
+  try {
+    await assert.rejects(
+      downloadMedia.execute({ url: "https://youtu.be/x" }, { userId: "u" }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.doesNotMatch(error.message, /fetch failed/u);
         assert.equal(error.message, MEDIA_FAILURE_MESSAGE);
         return true;
       },
@@ -152,5 +170,11 @@ function stubFetch(calls: string[], payload: unknown): () => void {
 function stubFetchStatus(status: number): () => void {
   const original = globalThis.fetch;
   globalThis.fetch = (() => Promise.resolve(new Response("{}", { status, headers: { "content-type": "application/json" } }))) as typeof fetch;
+  return () => { globalThis.fetch = original; };
+}
+
+function stubFetchReject(reason: unknown): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() => Promise.reject(reason)) as typeof fetch;
   return () => { globalThis.fetch = original; };
 }
