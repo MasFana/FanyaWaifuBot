@@ -115,6 +115,23 @@ test("plain text without reply or image is unchanged", async () => {
   assert.equal(events[0]!.images, undefined);
 });
 
+test("an empty reply quote is treated as absent", async () => {
+  const { channel, events } = setup();
+
+  await channel.receive({ id: "m1", fromId: "123", text: "halo sayang", replyToText: "", replyToFromBot: true });
+
+  assert.equal(events[0]!.text, "halo sayang");
+});
+
+test("a command sent as a reply still runs on the raw text", async () => {
+  const { channel, events } = setup();
+
+  await channel.receive({ id: "m1", fromId: "123", text: "/forget makan", replyToText: "inget ga?", replyToFromBot: true });
+
+  assert.equal(events.length, 1, "command must not be dropped");
+  assert.ok(events[0]!.text.startsWith("[SYSTEM COMMAND"), events[0]!.text);
+});
+
 test("truncateQuote and toDataUrl helpers", () => {
   assert.equal(truncateQuote("pendek"), "pendek");
   assert.equal(truncateQuote("b".repeat(250)), `${"b".repeat(220)}...`);

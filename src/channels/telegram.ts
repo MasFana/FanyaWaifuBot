@@ -42,7 +42,7 @@ export function toDataUrl(buffer: Buffer, mimeType: string): string {
 
 function buildInboundText(update: TelegramUpdate): string {
   const parts: string[] = [];
-  if (update.replyToText !== undefined) {
+  if (update.replyToText) {
     parts.push(formatReplyQuote(truncateQuote(update.replyToText), update.replyToFromBot ?? false));
   }
   if (update.images !== undefined && update.images.length > 0) {
@@ -251,7 +251,7 @@ export class TelegramChannel {
 
     if (raw.trimStart().startsWith("/")) {
       await this.flushPending(owner.id, { force: true });
-      await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, event); });
+      await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, { ...event, text: raw }); });
       return;
     }
 
