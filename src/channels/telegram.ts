@@ -1,7 +1,7 @@
 import { Bot, InputFile } from "grammy";
 import type { AppConfig } from "../config.js";
 import type { Clock } from "../core/clock.js";
-import type { InboundEvent, MediaDelivery, OutboundMedia, WakeupEvent } from "../core/types.js";
+import type { InboundEvent, InboundImage, MediaDelivery, OutboundMedia, WakeupEvent } from "../core/types.js";
 import type { ForgetResult, MemoryService } from "../memory/service.js";
 import { OwnerQueue } from "../core/owner-queue.js";
 import { decideReply } from "../core/living-state.js";
@@ -21,9 +21,36 @@ const sentenceSplitCeiling = 380;
 const ordinaryBubbleCap = 2;
 const shortBurstLength = 20;
 const shortBurstDebounceMs = 4500;
+const replyQuoteMax = 220;
+const photoMarker = "[Mengirim foto]";
 
 export function computeBurstDebounceMs(joinedLength: number, configuredMs: number): number {
   return joinedLength < shortBurstLength ? Math.max(configuredMs, shortBurstDebounceMs) : configuredMs;
+}
+
+export function truncateQuote(text: string, max = replyQuoteMax): string {
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+export function formatReplyQuote(text: string, fromBot: boolean): string {
+  return fromBot ? `[Membalas pesanmu: "${text}"]` : `[Membalas pesan sebelumnya: "${text}"]`;
+}
+
+export function toDataUrl(buffer: Buffer, mimeType: string): string {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+function buildInboundText(update: TelegramUpdate): string {
+  const parts: string[] = [];
+  if (update.replyToText !== undefined) {
+    parts.push(formatReplyQuote(truncateQuote(update.replyToText), update.replyToFromBot ?? false));
+  }
+  if (update.images !== undefined && update.images.length > 0) {
+    parts.push(update.text ? `${photoMarker} ${update.text}` : photoMarker);
+  } else if (update.text !== undefined) {
+    parts.push(update.text);
+  }
+  return parts.join("\n");
 }
 
 export interface SendProactiveOptions {
@@ -33,6 +60,7 @@ export interface SendProactiveOptions {
 interface PendingBurst {
   texts: string[];
   ids: string[];
+  images?: InboundImage[];
   timer?: ReturnType<typeof setTimeout>;
 }
 
@@ -53,14 +81,19 @@ export interface TelegramUpdate {
   id: string;
   fromId: string;
   text?: string;
+  replyToText?: string;
+  replyToFromBot?: boolean;
+  images?: InboundImage[];
 }
 
 export type Delay = (milliseconds: number) => Promise<void>;
 
 class GrammyBot implements TelegramBot {
   private readonly bot: Bot;
+  private readonly token: string;
 
   constructor(token: string) {
+    this.token = token;
     this.bot = new Bot(token);
   }
 
@@ -70,8 +103,47 @@ class GrammyBot implements TelegramBot {
         id: String(context.message.message_id),
         fromId: String(context.from.id),
         text: context.message.text,
+        ...this.replyContext(context.message.reply_to_message, context.me.id),
       });
     });
+    this.bot.on("message:photo", async (context) => {
+      const images = await this.downloadPhoto(context.message.photo.at(-1)?.file_id);
+      const update: TelegramUpdate = {
+        id: String(context.message.message_id),
+        fromId: String(context.from.id),
+        ...(context.message.caption === undefined ? {} : { text: context.message.caption }),
+        ...this.replyContext(context.message.reply_to_message, context.me.id),
+      };
+      if (images.length > 0) update.images = images;
+      await receiver(update);
+    });
+  }
+
+  private replyContext(
+    reply: { text?: string; caption?: string; from?: { id: number; is_bot?: boolean } } | undefined,
+    botId: number,
+  ): Pick<TelegramUpdate, "replyToText" | "replyToFromBot"> {
+    if (reply === undefined) return {};
+    const quote = reply.text ?? reply.caption;
+    if (quote === undefined) return {};
+    return {
+      replyToText: truncateQuote(quote),
+      replyToFromBot: reply.from?.id === botId || reply.from?.is_bot === true,
+    };
+  }
+
+  private async downloadPhoto(fileId: string | undefined): Promise<InboundImage[]> {
+    if (fileId === undefined) return [];
+    try {
+      const file = await this.bot.api.getFile(fileId);
+      if (file.file_path === undefined) return [];
+      const response = await fetch(`https://api.telegram.org/file/bot${this.token}/${file.file_path}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const mimeType = response.headers.get("content-type") ?? "image/jpeg";
+      return [{ dataUrl: toDataUrl(buffer, mimeType), mimeType }];
+    } catch {
+      return [];
+    }
   }
 
   async sendMessage(chatId: string, text: string): Promise<void> {
@@ -159,23 +231,25 @@ export class TelegramChannel {
   }
 
   async receive(update: TelegramUpdate): Promise<void> {
-    const text = update.text;
-    if (!text) return;
-    const owner = this.authorize(update.fromId, text);
+    if (!update.text && !update.images?.length) return;
+    const raw = update.text ?? "";
+    const owner = this.authorize(update.fromId, raw);
     if (!owner) return;
 
+    const text = buildInboundText(update);
     const event: InboundEvent = {
       id: update.id,
       userId: owner.id,
       text,
       receivedAt: this.clock.now(),
+      ...(update.images === undefined || update.images.length === 0 ? {} : { images: update.images }),
     };
     if (!this.memory.recordInbound(channelName, event)) return;
     this.memory.resetUnansweredProactiveCount(owner.id);
     this.lastUserActivityAt = event.receivedAt;
-    this.sleepUntil = sleepPhrase.test(text) ? event.receivedAt + sleepDurationMs : null;
+    this.sleepUntil = sleepPhrase.test(raw) ? event.receivedAt + sleepDurationMs : null;
 
-    if (text.trimStart().startsWith("/")) {
+    if (raw.trimStart().startsWith("/")) {
       await this.flushPending(owner.id, { force: true });
       await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, event); });
       return;
@@ -191,6 +265,9 @@ export class TelegramChannel {
     const burst = this.pending.get(owner.id) ?? { texts: [], ids: [] };
     burst.texts.push(text);
     burst.ids.push(message.id);
+    if (update.images !== undefined && update.images.length > 0) {
+      burst.images = [...(burst.images ?? []), ...update.images];
+    }
     this.pending.set(owner.id, burst);
 
     if (this.config.replies.debounceMs <= 0) {
@@ -228,6 +305,7 @@ export class TelegramChannel {
         receivedAt: this.clock.now(),
         ...(lastId === undefined ? {} : { storedMessageId: lastId }),
         storedMessageIds: burst.ids,
+        ...(burst.images === undefined || burst.images.length === 0 ? {} : { images: burst.images }),
       };
       await this.queue.enqueue(id, async () => {
         if (decideReply(this.memory.getPersonaState(id), { focusThreshold: this.config.replies.focusDeferThreshold }) === "defer") {

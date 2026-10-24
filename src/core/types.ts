@@ -27,6 +27,11 @@ export interface LLMResponse {
   toolCalls: readonly ToolCall[];
 }
 
+export interface InboundImage {
+  dataUrl: string;
+  mimeType: string;
+}
+
 export interface InboundEvent {
   id: string;
   userId: string;
@@ -34,6 +39,7 @@ export interface InboundEvent {
   receivedAt: number;
   storedMessageId?: string;
   storedMessageIds?: readonly string[];
+  images?: InboundImage[];
 }
 
 export interface WakeupEvent {
