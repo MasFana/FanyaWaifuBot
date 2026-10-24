@@ -150,7 +150,7 @@ export class TelegramChannel {
     this.memory.resetUnansweredProactiveCount(owner.id);
 
     if (text.trimStart().startsWith("/")) {
-      await this.flushPending(owner.id);
+      await this.flushPending(owner.id, { force: true });
       await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, event); });
       return;
     }
@@ -168,28 +168,32 @@ export class TelegramChannel {
     this.pending.set(owner.id, burst);
 
     if (this.config.replies.debounceMs <= 0) {
-      await this.flushPending(owner.id);
+      await this.flushPending(owner.id, { force: true });
       return;
     }
-    if (burst.timer) clearTimeout(burst.timer);
-    burst.timer = setTimeout(() => { void this.flushPending(owner.id); }, this.config.replies.debounceMs);
+    this.scheduleFlush(owner.id);
   }
 
   /**
    * Menggabungkan pesan owner yang beruntun (burst) menjadi satu giliran, lalu
    * menjalankannya sebagai satu agent turn. Dipanggil oleh timer debounce, oleh
    * command (agar burst lama tidak hilang), dan oleh heartbeat sebelum wakeup.
+   *
+   * Selama masih ada giliran yang berjalan untuk owner ini, burst baru ditahan
+   * dan dijadwalkan ulang agar semua pesan yang diketik sambil Fanya "mikir"
+   * menyatu jadi satu balasan susulan, bukan satu balasan per pesan.
    */
-  async flushPending(userId?: string): Promise<void> {
+  async flushPending(userId?: string, options: { force?: boolean } = {}): Promise<void> {
     const owners = userId === undefined ? [...this.pending.keys()] : [userId];
     for (const id of owners) {
       const burst = this.pending.get(id);
       if (burst === undefined || burst.texts.length === 0) continue;
+      if (options.force !== true && this.queue.isBusy(id)) {
+        this.scheduleFlush(id);
+        continue;
+      }
       if (burst.timer) clearTimeout(burst.timer);
       this.pending.delete(id);
-      if (decideReply(this.memory.getPersonaState(id), { focusThreshold: this.config.replies.focusDeferThreshold }) === "defer") {
-        await this.delay(this.config.replies.deferExtraMs);
-      }
       const lastId = burst.ids.at(-1);
       const event: InboundEvent = {
         id: lastId ?? burst.texts.join("\n"),
@@ -199,8 +203,20 @@ export class TelegramChannel {
         ...(lastId === undefined ? {} : { storedMessageId: lastId }),
         storedMessageIds: burst.ids,
       };
-      await this.queue.enqueue(id, async () => { await this.agent?.runInbound(event); });
+      await this.queue.enqueue(id, async () => {
+        if (decideReply(this.memory.getPersonaState(id), { focusThreshold: this.config.replies.focusDeferThreshold }) === "defer") {
+          await this.delay(this.config.replies.deferExtraMs);
+        }
+        await this.agent?.runInbound(event);
+      });
     }
+  }
+
+  private scheduleFlush(ownerId: string): void {
+    const burst = this.pending.get(ownerId);
+    if (burst === undefined) return;
+    if (burst.timer) clearTimeout(burst.timer);
+    burst.timer = setTimeout(() => { void this.flushPending(ownerId); }, this.config.replies.debounceMs);
   }
 
   async sendReply(userId: string, text: string): Promise<void> {

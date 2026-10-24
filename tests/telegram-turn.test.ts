@@ -54,6 +54,29 @@ test("burst of owner messages within the debounce window becomes one turn", asyn
   assert.equal(memory.exportOwner("123").messages.filter((message) => message.role === "user").length, 3);
 });
 
+test("messages arriving while a turn is in flight merge into one follow-up turn", async () => {
+  const { channel, turns } = setup(10_000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  channel.setAgent({ runInbound: async (event) => { turns.push(event.text); if (event.text === "m1") await gate; } });
+
+  await channel.receive({ id: "m1", fromId: "123", text: "m1" });
+  void channel.flushPending("123");
+  await Promise.resolve();
+
+  await channel.receive({ id: "m2", fromId: "123", text: "m2" });
+  await channel.receive({ id: "m3", fromId: "123", text: "m3" });
+  await channel.flushPending("123");
+
+  assert.deepEqual(turns, ["m1"], "follow-up waits while the first turn is in flight");
+
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await channel.flushPending("123");
+
+  assert.deepEqual(turns, ["m1", "m2\nm3"], "held messages coalesce into a single follow-up turn");
+});
+
 test("command flushes the pending burst before running itself", async () => {
   const { channel, turns } = setup(10_000);
 

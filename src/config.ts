@@ -24,7 +24,7 @@ const environmentSchema = z.object({
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   SPONTANEOUS_IDLE_HOURS: z.coerce.number().positive().default(6),
   MAX_UNANSWERED_PROACTIVE: z.coerce.number().int().nonnegative().default(2),
-  REPLY_DEBOUNCE_MS: z.coerce.number().int().nonnegative().default(4_000),
+  REPLY_DEBOUNCE_MS: z.coerce.number().int().nonnegative().default(8_000),
   REPLY_DEFER_EXTRA_MS: z.coerce.number().int().nonnegative().default(60_000),
   REPLY_MAX_BUBBLES: z.coerce.number().int().positive().default(4),
   FOCUS_DEFER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
