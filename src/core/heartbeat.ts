@@ -4,8 +4,7 @@ import type { Agent } from "./agent.js";
 import type { Clock } from "./clock.js";
 import type { WakeupEvent } from "./types.js";
 import { OwnerQueue } from "./owner-queue.js";
-
-const hourMs = 60 * 60_000;
+import { shouldInitiate, tickLivingState } from "./living-state.js";
 
 export class HeartbeatEngine {
   private running = false;
@@ -66,13 +65,15 @@ export class HeartbeatEngine {
     if (inQuietHours(local.time, state.quietHours.start, state.quietHours.end)) return;
     if (state.unansweredCount >= this.config.heartbeat.maxUnansweredProactive) return;
     const greeting = local.hour < 12 ? "morning" : local.hour >= 18 ? "night" : undefined;
-    if (greeting && this.memory.claimProactiveEvent(userId, greeting, local.date)) {
-      await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
+    if (greeting !== undefined) {
+      if (this.memory.claimProactiveEvent(userId, greeting, local.date)) {
+        await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
+      }
       return;
     }
-    const idleMs = this.config.heartbeat.spontaneousIdleHours * hourMs;
-    if (state.lastUserMessageAt === null || this.clock.now() - state.lastUserMessageAt < idleMs || (state.lastProactiveAt !== null && this.clock.now() - state.lastProactiveAt < idleMs)) return;
-    await this.wake(userId, { userId, triggerType: "spontaneous" });
+    const persona = tickLivingState(this.memory.getPersonaState(userId), { now: this.clock.now(), lastUserMessageAt: state.lastUserMessageAt, seed: userId });
+    this.memory.setPersonaState(userId, persona);
+    if (shouldInitiate(persona) !== null) await this.wake(userId, { userId, triggerType: "spontaneous" });
   }
 
   private async wake(userId: string, wakeup: WakeupEvent, revert?: () => void): Promise<void> {

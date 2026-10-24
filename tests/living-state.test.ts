@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultPersonaState, parsePersonaState } from "../src/core/persona-state.js";
-import { activityPool, decideReply, renderStateCue, tickLivingState } from "../src/core/living-state.js";
+import { activityPool, decideReply, renderStateCue, shouldInitiate, tickLivingState } from "../src/core/living-state.js";
 import { applyOwnerSentiment, computeMood } from "../src/core/mood.js";
 
 const tz = "Asia/Jakarta";
@@ -74,6 +74,23 @@ test("decideReply defers only when an activity is active and focus is high", () 
   assert.equal(decideReply(focused, { focusThreshold: 0.6 }), "defer");
   assert.equal(decideReply({ ...focused, activity: null }, { focusThreshold: 0.6 }), "reply");
   assert.equal(decideReply(defaultPersonaState, { focusThreshold: 0.6 }), "reply");
+});
+
+test("shouldInitiate fires share when wantToShare is high", () => {
+  const state = { ...defaultPersonaState, drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } };
+
+  assert.equal(shouldInitiate(state), "share");
+});
+
+test("shouldInitiate fires company when wantCompany is high", () => {
+  const state = { ...defaultPersonaState, drives: { wantCompany: 0.7, wantToShare: 0, focus: 0, boundary: 0 } };
+
+  assert.equal(shouldInitiate(state), "company");
+});
+
+test("shouldInitiate returns null when no drive is high", () => {
+  assert.equal(shouldInitiate(defaultPersonaState), null);
+  assert.equal(shouldInitiate({ ...defaultPersonaState, drives: { wantCompany: 0.5, wantToShare: 0.5, focus: 0, boundary: 0 } }), null);
 });
 
 test("renderStateCue has no NaN or Infinity for default state", () => {

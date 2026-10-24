@@ -20,6 +20,7 @@ const boundaryDecayPerMs = 0.05 / 3_600_000;
 const silenceForCompanyMs = 60 * 60_000;
 const shareOnFinish = 0.3;
 const focusOnStart = 0.8;
+const initiativeThreshold = 0.6;
 
 /**
  * Memajukan dunia Fanya secara deterministik (tanpa LLM): memilih/menyelesaikan
@@ -71,6 +72,13 @@ export function renderStateCue(state: PersonaState, mood: MoodState): string {
 /** Apakah Fanya sedang terlalu fokus sampai lebih baik menunda balasan hidup. */
 export function decideReply(state: PersonaState, input: { focusThreshold: number }): "reply" | "defer" {
   return state.activity !== null && state.drives.focus >= input.focusThreshold ? "defer" : "reply";
+}
+
+/** Inisiatif proaktif murni dari drives — null bila tidak ada dorongan yang cukup kuat. */
+export function shouldInitiate(state: PersonaState): "share" | "company" | null {
+  if (state.drives.wantToShare >= initiativeThreshold) return "share";
+  if (state.drives.wantCompany >= initiativeThreshold) return "company";
+  return null;
 }
 
 function pickActivity(seed: string, now: number): Activity {

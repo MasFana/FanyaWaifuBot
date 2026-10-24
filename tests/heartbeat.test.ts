@@ -7,6 +7,7 @@ import type { AgentOutcome } from "../src/core/agent.js";
 import type { WakeupEvent } from "../src/core/types.js";
 import { migrate, openDatabase } from "../src/db/index.js";
 import { MemoryService } from "../src/memory/service.js";
+import { defaultPersonaState } from "../src/core/persona-state.js";
 import { createTestConfig } from "./helpers.js";
 
 const hour = 60 * 60_000;
@@ -117,14 +118,43 @@ test("heartbeat timer survives rejected tick and can be stopped", async () => {
   assert.ok(agent.wakeups.length >= 1);
 });
 
-test("heartbeat starts spontaneous care after configured owner idle duration", async () => {
-  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 22, 23));
-  memory.recordOwnerActivity(owner.id);
-  clock.set(clock.now() + 6 * hour);
+test("heartbeat initiates spontaneous care when a drive is high", async () => {
+  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 10));
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
 
   await heartbeat.tick();
 
   assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 1);
+});
+
+test("heartbeat blocks drive initiative during quiet hours", async () => {
+  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 19));
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
+
+  await heartbeat.tick();
+
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
+});
+
+test("heartbeat blocks drive initiative after maximum unanswered proactive messages", async () => {
+  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 10));
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
+  memory.setUnansweredProactiveCount(owner.id, 2);
+
+  await heartbeat.tick();
+
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
+});
+
+test("heartbeat greeting does not double with drive triggers", async () => {
+  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 1));
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
+
+  await heartbeat.tick();
+  await heartbeat.tick();
+
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "greeting").length, 1);
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
 });
 
 test("heartbeat backs off spontaneous care after maximum unanswered proactive messages", async () => {
