@@ -146,7 +146,17 @@ test("heartbeat blocks drive initiative after maximum unanswered proactive messa
   assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
 });
 
-test("heartbeat greeting does not double with drive triggers", async () => {
+test("heartbeat greeting preempts drive initiative on the same tick", async () => {
+  const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 1));
+  memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
+
+  await heartbeat.tick();
+
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "greeting").length, 1);
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
+});
+
+test("heartbeat allows drive initiative once the daily greeting was already sent", async () => {
   const { agent, clock, heartbeat, memory, owner } = setup(Date.UTC(2026, 9, 23, 1));
   memory.setPersonaState(owner.id, { ...defaultPersonaState, updatedAt: clock.now(), drives: { wantCompany: 0, wantToShare: 0.9, focus: 0, boundary: 0 } });
 
@@ -154,7 +164,7 @@ test("heartbeat greeting does not double with drive triggers", async () => {
   await heartbeat.tick();
 
   assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "greeting").length, 1);
-  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
+  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 1);
 });
 
 test("heartbeat backs off spontaneous care after maximum unanswered proactive messages", async () => {

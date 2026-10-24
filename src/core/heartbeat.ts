@@ -65,10 +65,8 @@ export class HeartbeatEngine {
     if (inQuietHours(local.time, state.quietHours.start, state.quietHours.end)) return;
     if (state.unansweredCount >= this.config.heartbeat.maxUnansweredProactive) return;
     const greeting = local.hour < 12 ? "morning" : local.hour >= 18 ? "night" : undefined;
-    if (greeting !== undefined) {
-      if (this.memory.claimProactiveEvent(userId, greeting, local.date)) {
-        await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
-      }
+    if (greeting && this.memory.claimProactiveEvent(userId, greeting, local.date)) {
+      await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
       return;
     }
     const persona = tickLivingState(this.memory.getPersonaState(userId), { now: this.clock.now(), lastUserMessageAt: state.lastUserMessageAt, seed: userId });
