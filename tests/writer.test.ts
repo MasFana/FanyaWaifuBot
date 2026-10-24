@@ -90,6 +90,52 @@ test("writer rejects unknown keys inside fact and commitment objects", async () 
   assert.equal(memory.listPendingCommitments(owner.id).length, 0);
 });
 
+test("writer stores a bounded image description from vision extraction", async () => {
+  const { clock, extractor, memory, owner } = setup();
+  const message = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+  extractor.enqueue({ content: JSON.stringify({ facts: [], commitments: [] }), toolCalls: [] });
+  extractor.enqueue({ content: JSON.stringify({ description: "Panel manhwa menampilkan dialog dua tokoh." }), toolCalls: [] });
+  const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
+
+  await writer.enqueue({
+    userId: owner.id,
+    ownerMessage: "[Mengirim foto]",
+    messageId: message.id,
+    imageMessageId: message.id,
+    images: [{ dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }],
+  });
+
+  assert.equal(memory.getImageContexts(owner.id, [message.id]).get(message.id)?.description, "Panel manhwa menampilkan dialog dua tokoh.");
+  assert.ok(extractor.getRequests()[1]?.messages.some((item) => item.role === "user" && Array.isArray(item.content)));
+});
+
+test("writer rejects invalid image descriptions", async () => {
+  const invalidDescriptions = ["not JSON", JSON.stringify({ description: "   " }), JSON.stringify({ description: "a".repeat(601) })];
+  for (const [index, content] of invalidDescriptions.entries()) {
+    const { clock, extractor, memory, owner } = setup();
+    const message = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+    extractor.enqueue({ content: JSON.stringify({ facts: [], commitments: [] }), toolCalls: [] });
+    extractor.enqueue({ content, toolCalls: [] });
+    const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
+
+    await writer.enqueue({ userId: owner.id, ownerMessage: "[Mengirim foto]", messageId: message.id, imageMessageId: message.id, images: [{ dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }] });
+
+    assert.equal(memory.getImageContexts(owner.id, [message.id]).size, 0, `case ${index}`);
+  }
+});
+
+test("writer extracts image context when text-memory extraction is malformed", async () => {
+  const { clock, extractor, memory, owner } = setup();
+  const message = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+  extractor.enqueue({ content: "not JSON", toolCalls: [] });
+  extractor.enqueue({ content: JSON.stringify({ description: "Foto menunjukkan meja makan." }), toolCalls: [] });
+  const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
+
+  await writer.enqueue({ userId: owner.id, ownerMessage: "[Mengirim foto]", messageId: message.id, imageMessageId: message.id, images: [{ dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }] });
+
+  assert.equal(memory.getImageContexts(owner.id, [message.id]).get(message.id)?.description, "Foto menunjukkan meja makan.");
+});
+
 test("memory search and schedule tools expose FTS and pending agenda", async () => {
   const { clock, memory, owner } = setup();
   memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "Aku liburan ke Bandung" });
@@ -113,15 +159,17 @@ test("agent passes current persisted owner message to writer only after nonempty
   const fake = new FakeLLMProvider();
   fake.enqueue({ content: "Hai", toolCalls: [] });
   extractor.enqueue({ content: JSON.stringify({ facts: [], commitments: [] }), toolCalls: [] });
+  extractor.enqueue({ content: JSON.stringify({ description: "Foto menampilkan panel manhwa." }), toolCalls: [] });
   const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
   const agent = new Agent(fake, memory, new ToolRegistry([]), channel, new ContextBuilder(memory, clock, "P", "G", "T"), clock, "chat-model", writer);
   const stored = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "persisted owner text" });
 
-  await agent.runInbound({ ...inbound, storedMessageId: stored.id });
+  await agent.runInbound({ ...inbound, storedMessageId: stored.id, imageMessageId: stored.id, images: [{ dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }] });
   await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.deepEqual(sent, ["Hai"]);
   assert.deepEqual(extractor.getRequests()[0]?.messages, [{ role: "user", content: "persisted owner text" }]);
+  assert.equal(memory.getImageContexts(owner.id, [stored.id]).get(stored.id)?.description, "Foto menampilkan panel manhwa.");
 });
 
 test("agent keeps original persisted owner message when newer inbound arrives during delivery", async () => {
@@ -141,6 +189,31 @@ test("agent keeps original persisted owner message when newer inbound arrives du
   await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.deepEqual(extractor.getRequests()[0]?.messages, [{ role: "user", content: "pesan pertama" }]);
+});
+
+test("agent hands delivered image turn to writer for persistent context", async () => {
+  const { clock, extractor, memory, owner } = setup();
+  const stored = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+  const channel: Channel = { sendReply: async () => undefined, sendProactive: async () => undefined };
+  const chat = new FakeLLMProvider();
+  chat.enqueue({ content: "wah lucu", toolCalls: [] });
+  extractor.enqueue({ content: JSON.stringify({ facts: [], commitments: [] }), toolCalls: [] });
+  extractor.enqueue({ content: JSON.stringify({ description: "Foto memperlihatkan panel manhwa." }), toolCalls: [] });
+  const writer = new PostTurnWriter(extractor, memory, clock, "extractor-model");
+  const agent = new Agent(chat, memory, new ToolRegistry([]), channel, new ContextBuilder(memory, clock, "P", "G", "T"), clock, "chat-model", writer);
+
+  await agent.runInbound({
+    id: "inbound-photo",
+    userId: owner.id,
+    text: "[Mengirim foto]",
+    receivedAt: now,
+    storedMessageId: stored.id,
+    imageMessageId: stored.id,
+    images: [{ dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }],
+  });
+  await writer.awaitIdle();
+
+  assert.equal(memory.getImageContexts(owner.id, [stored.id]).get(stored.id)?.description, "Foto memperlihatkan panel manhwa.");
 });
 
 test("agent does not start writer when final content is empty or delivery fails", async () => {

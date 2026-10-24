@@ -29,7 +29,7 @@ class FakeBot implements TelegramBot {
   stop(): void {}
 }
 
-function setup() {
+function setup(debounceMs = 0) {
   const database = openDatabase(":memory:");
   databases.push(database);
   const clock = new FrozenClock(1_729_648_000_000);
@@ -38,7 +38,7 @@ function setup() {
   memory.ensureOwner("telegram", "123");
   const base = createTestConfig();
   const channel = new TelegramChannel(
-    { ...base, telegram: { botToken: "test-token", ownerId: "123" }, replies: { ...base.replies, debounceMs: 0 } },
+    { ...base, telegram: { botToken: "test-token", ownerId: "123" }, replies: { ...base.replies, debounceMs } },
     memory, clock, new FakeBot(), async () => {},
   );
   const events: InboundEvent[] = [];
@@ -96,6 +96,19 @@ test("photo without a caption still runs the turn with just the marker", async (
   assert.equal(events.length, 1);
   assert.equal(events[0]!.text, "[Mengirim foto]");
   assert.equal(events[0]!.images?.[0]?.mimeType, "image/png");
+});
+
+test("photo then text burst retains source ID from photo message", async () => {
+  const { channel, memory, events } = setup(1_000);
+  const image = { dataUrl: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" };
+
+  await channel.receive({ id: "photo", fromId: "123", images: [image] });
+  await channel.receive({ id: "text", fromId: "123", text: "aneh gimana?" });
+  await channel.flushPending("123", { force: true });
+
+  const messages = memory.exportOwner("123").messages.filter((message) => message.role === "user");
+  assert.equal(events[0]?.imageMessageId, messages[0]?.id);
+  assert.equal(events[0]?.storedMessageId, messages[1]?.id);
 });
 
 test("reply and photo combine as quote line then marker with caption", async () => {

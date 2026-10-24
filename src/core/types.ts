@@ -44,6 +44,7 @@ export interface InboundEvent {
   receivedAt: number;
   storedMessageId?: string;
   storedMessageIds?: readonly string[];
+  imageMessageId?: string;
   images?: InboundImage[];
 }
 

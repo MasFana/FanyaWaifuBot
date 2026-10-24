@@ -35,22 +35,31 @@ test("migrates PRD schema once and provides FTS5 tables", () => {
 
   assert.equal(facts.n, 1);
   assert.equal(proactiveEvent.n, 1);
-  assert.deepEqual(migration, [{ version: 1, applied_at: 1_729_648_000_000 }]);
+  const imageContexts = database
+    .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'image_contexts'")
+    .get() as { n: number };
+
+  assert.deepEqual(migration, [
+    { version: 1, applied_at: 1_729_648_000_000 },
+    { version: 2, applied_at: 1_729_648_000_000 },
+  ]);
+  assert.equal(imageContexts.n, 1);
   assert.doesNotThrow(() => database.prepare("INSERT INTO facts_fts(content) VALUES ('kopi')").run());
 });
 
-test("does not rerun an already applied schema version", () => {
+test("upgrades a version-one database without replacing its data", () => {
   const database = openDatabase(":memory:");
   databases.push(database);
-  database.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
-  database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (1, 0)").run();
+  const clock = new FrozenClock(1_729_648_000_000);
+  migrate(database, clock);
+  database.prepare("INSERT INTO users (id, created_at) VALUES (?, ?)").run("owner", 0);
+  database.exec("DROP TABLE image_contexts");
+  database.prepare("DELETE FROM schema_migrations WHERE version = 2").run();
 
-  migrate(database, new FrozenClock(1_729_648_000_000));
+  migrate(database, clock);
 
-  const facts = database
-    .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'facts'")
-    .get() as { n: number };
-  assert.equal(facts.n, 0);
+  assert.equal((database.prepare("SELECT count(*) AS n FROM users WHERE id = 'owner'").get() as { n: number }).n, 1);
+  assert.equal((database.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'image_contexts'").get() as { n: number }).n, 1);
 });
 
 test("opens every connection with foreign keys and WAL enabled", () => {

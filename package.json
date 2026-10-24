@@ -6,7 +6,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/src/main.js",
     "typecheck": "tsc --noEmit",
-    "build": "tsc && node -e \"require('node:fs').cpSync('src/db/schema.sql', 'dist/src/db/schema.sql')\"",
+    "build": "tsc && node -e \"require('node:fs').cpSync('src/db/schema.sql', 'dist/src/db/schema.sql');require('node:fs').cpSync('src/db/migrations', 'dist/src/db/migrations', {recursive:true})\"",
     "db:clean": "node -e \"const fs=require('node:fs');['data/fanya.db','data/fanya.db-shm','data/fanya.db-wal'].forEach(f=>fs.rmSync(f,{force:true}));console.log('db cleaned')\"",
     "test": "tsx --test \"src/**/*.test.ts\" \"tests/**/*.test.ts\""
   },

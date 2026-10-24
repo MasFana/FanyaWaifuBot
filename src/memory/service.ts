@@ -26,6 +26,12 @@ export interface StoredMessage {
   createdAt: number;
 }
 
+export interface ImageContext {
+  messageId: string;
+  description: string;
+  createdAt: number;
+}
+
 export interface Fact {
   id: string;
   userId: string;
@@ -53,6 +59,7 @@ export interface Commitment {
 
 export interface SearchResults {
   messages: StoredMessage[];
+  imageContexts: ImageContext[];
   facts: Fact[];
 }
 
@@ -100,6 +107,7 @@ interface SequenceRow { next_seq: number }
 interface FactRow { id: string; user_id: string; content: string; category: string; origin: FactInput["origin"]; status: FactStatus; replaced_by: string | null; created_at: number; updated_at: number }
 interface CommitmentRow { id: string; user_id: string; title: string; context_notes: string; event_at: number | null; remind_at: number | null; follow_up_at: number | null; status: CommitmentStatus; created_at: number; updated_at: number }
 interface MessageRow { id: string; conversation_id: string; seq: number; role: StoredMessage["role"]; content: string | null; is_proactive: number; tool_calls_json: string | null; tool_call_id: string | null; created_at: number }
+interface ImageContextRow { message_id: string; description: string; created_at: number }
 const factColumns = "id, user_id, content, category, origin, status, replaced_by, created_at, updated_at";
 const commitmentColumns = "id, user_id, title, context_notes, event_at, remind_at, follow_up_at, status, created_at, updated_at";
 const messageColumns = "id, conversation_id, seq, role, content, is_proactive, tool_calls_json, tool_call_id, created_at";
@@ -157,6 +165,29 @@ export class MemoryService {
 
   appendMessage(userId: string, input: AppendMessageInput): StoredMessage {
     return this.database.transaction(() => this.appendMessageUnsafe(userId, input))();
+  }
+
+  saveImageContext(userId: string, messageId: string, description: string): ImageContext | undefined {
+    if (description.length === 0 || description.length > 600) throw new RangeError("Image context description must be 1-600 characters");
+    return this.database.transaction(() => {
+      const source = this.database.prepare("SELECT m.id FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.id = ? AND c.user_id = ?").get(messageId, userId) as { id: string } | undefined;
+      if (source === undefined) return undefined;
+      const now = this.clock.now();
+      const id = randomUUID();
+      const inserted = this.database.prepare("INSERT INTO image_contexts (id, message_id, description, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(message_id) DO NOTHING").run(id, messageId, description, now);
+      if (inserted.changes === 1) {
+        this.database.prepare("INSERT INTO messages_fts (content, conversation_id, message_id, role, created_at) SELECT ?, m.conversation_id, m.id, m.role, ? FROM messages m WHERE m.id = ?").run(description, now, messageId);
+      }
+      const row = this.database.prepare("SELECT message_id, description, created_at FROM image_contexts WHERE message_id = ?").get(messageId) as ImageContextRow;
+      return toImageContext(row);
+    })();
+  }
+
+  getImageContexts(userId: string, messageIds: readonly string[]): ReadonlyMap<string, ImageContext> {
+    if (messageIds.length === 0) return new Map();
+    const placeholders = messageIds.map(() => "?").join(", ");
+    const rows = this.database.prepare(`SELECT i.message_id, i.description, i.created_at FROM image_contexts i JOIN messages m ON m.id = i.message_id JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = ? AND i.message_id IN (${placeholders})`).all(userId, ...messageIds) as ImageContextRow[];
+    return new Map(rows.map((row) => [row.message_id, toImageContext(row)]));
   }
 
   createAgentRun(userId: string, triggerType: AgentTrigger, model: string): string {
@@ -296,8 +327,9 @@ export class MemoryService {
 
   search(userId: string, query: string): SearchResults {
     const messages = this.database.prepare(`SELECT ${prefixedMessageColumns} FROM messages_fts f JOIN messages m ON m.id = f.message_id JOIN conversations c ON c.id = m.conversation_id WHERE messages_fts MATCH ? AND c.user_id = ? ORDER BY bm25(messages_fts) LIMIT 10`).all(ftsQuery(query), userId) as MessageRow[];
+    const imageContexts = this.database.prepare("SELECT i.message_id, i.description, i.created_at FROM messages_fts f JOIN image_contexts i ON i.message_id = f.message_id JOIN messages m ON m.id = i.message_id JOIN conversations c ON c.id = m.conversation_id WHERE messages_fts MATCH ? AND c.user_id = ? ORDER BY bm25(messages_fts) LIMIT 10").all(ftsQuery(query), userId) as ImageContextRow[];
     const facts = this.database.prepare(`SELECT ${prefixedFactColumns} FROM facts_fts x JOIN facts f ON f.id = x.fact_id WHERE facts_fts MATCH ? AND f.user_id = ? AND f.status = 'active' ORDER BY bm25(facts_fts) LIMIT 10`).all(ftsQuery(query), userId) as FactRow[];
-    return { messages: messages.map(toMessage), facts: facts.map(toFact) };
+    return { messages: messages.map(toMessage), imageContexts: imageContexts.map(toImageContext), facts: facts.map(toFact) };
   }
 
   forget(userId: string, topic: string): ForgetResult {
@@ -404,6 +436,10 @@ function toMessage(row: MessageRow): StoredMessage {
     ...(toolCalls === undefined ? {} : { toolCalls }),
     createdAt: row.created_at,
   };
+}
+
+function toImageContext(row: ImageContextRow): ImageContext {
+  return { messageId: row.message_id, description: row.description, createdAt: row.created_at };
 }
 
 function parseToolCalls(value: string): readonly ToolCall[] | undefined {

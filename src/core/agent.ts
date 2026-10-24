@@ -37,7 +37,13 @@ export class Agent {
     const ownerMessage = event.storedMessageId === undefined ? undefined : this.memory.getMessage(event.storedMessageId);
     const ownerContent = ownerMessage?.content;
     if (outcome.status === "completed" && outcome.delivered === true && this.writer !== undefined && ownerMessage !== undefined && ownerContent !== null && ownerContent !== undefined) {
-      void this.writer.enqueue({ userId: event.userId, ownerMessage: ownerContent, messageId: ownerMessage.id }).catch(() => undefined);
+      void this.writer.enqueue({
+        userId: event.userId,
+        ownerMessage: ownerContent,
+        messageId: ownerMessage.id,
+        ...(event.imageMessageId === undefined ? {} : { imageMessageId: event.imageMessageId }),
+        ...(event.images === undefined ? {} : { images: event.images }),
+      }).catch(() => undefined);
     }
   }
 

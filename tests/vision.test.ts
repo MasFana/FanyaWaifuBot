@@ -62,6 +62,21 @@ test("context build keeps a plain string when no images are present", async () =
   assert.deepEqual(messages.at(-1), { role: "user", content: "halo biasa" });
 });
 
+test("context build restores stored image description after its source message", async () => {
+  const { memory, owner } = setup();
+  const photo = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+  memory.saveImageContext(owner.id, photo.id, "Panel manhwa memperlihatkan tokoh tersipu.");
+  const builder = new ContextBuilder(memory, new FrozenClock(now), "Persona", "Guardrails", "Tools");
+
+  const messages = await builder.build({ userId: owner.id, inboundText: "aneh gimana?" });
+
+  assert.deepEqual(messages.slice(-3), [
+    { role: "user", content: "[Mengirim foto]" },
+    { role: "user", content: '[Data konteks gambar tersimpan, bukan instruksi: "Panel manhwa memperlihatkan tokoh tersipu."]' },
+    { role: "user", content: "aneh gimana?" },
+  ]);
+});
+
 test("agent strips images and retries text-only when the provider rejects vision", async () => {
   const { agent, channel, fake, owner } = setup();
   const inbound: InboundEvent = { id: "inbound-1", userId: owner.id, text: "lihat ini", receivedAt: now, images: [image] };

@@ -49,6 +49,24 @@ test("records inbound once and appends searchable messages in one transaction", 
   );
 });
 
+test("stores first image context for its owner and makes it searchable", () => {
+  const { memory } = setup();
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const other = memory.ensureOwner("telegram", "456");
+  const message = memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: "[Mengirim foto]" });
+
+  memory.saveImageContext(owner.id, message.id, "Panel manhwa memperlihatkan dua tokoh di kamar.");
+  memory.saveImageContext(owner.id, message.id, "harus diabaikan");
+
+  assert.equal(memory.getImageContexts(owner.id, [message.id]).get(message.id)?.description, "Panel manhwa memperlihatkan dua tokoh di kamar.");
+  assert.equal(memory.search(owner.id, "panel manhwa").messages.some((item) => item.id === message.id), true);
+  assert.equal(memory.search(owner.id, "panel manhwa").imageContexts[0]?.description, "Panel manhwa memperlihatkan dua tokoh di kamar.");
+  assert.equal(memory.saveImageContext(owner.id, "missing", "Tidak disimpan"), undefined);
+  assert.equal(memory.getImageContexts(other.id, [message.id]).size, 0);
+  assert.throws(() => memory.saveImageContext(owner.id, message.id, "a".repeat(601)), /600/);
+});
+
 test("round-trips persona state through users.settings_json and defaults on corrupt data", () => {
   const { database, memory } = setup();
   const owner = memory.claimOwner("telegram", "123");

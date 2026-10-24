@@ -91,6 +91,7 @@ export interface SendProactiveOptions {
 interface PendingBurst {
   texts: string[];
   ids: string[];
+  imageMessageId?: string;
   images?: InboundImage[];
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -332,6 +333,7 @@ export class TelegramChannel {
     burst.texts.push(text);
     burst.ids.push(message.id);
     if (update.images !== undefined && update.images.length > 0) {
+      burst.imageMessageId = message.id;
       burst.images = [...(burst.images ?? []), ...update.images];
     }
     this.pending.set(owner.id, burst);
@@ -374,6 +376,7 @@ export class TelegramChannel {
         receivedAt: this.clock.now(),
         ...(lastId === undefined ? {} : { storedMessageId: lastId }),
         storedMessageIds: burst.ids,
+        ...(burst.imageMessageId === undefined ? {} : { imageMessageId: burst.imageMessageId }),
         ...(burst.images === undefined || burst.images.length === 0
           ? {}
           : { images: burst.images }),
