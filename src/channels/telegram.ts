@@ -62,6 +62,10 @@ export function isImageContentType(value: string | null): boolean {
   return value !== null && value.startsWith("image/");
 }
 
+export function resolvePhotoMimeType(header: string | null): string {
+  return isImageContentType(header) ? header : "image/jpeg";
+}
+
 function buildInboundText(update: TelegramUpdate): string {
   const parts: string[] = [];
   if (update.replyToText) {
@@ -192,13 +196,8 @@ class GrammyBot implements TelegramBot {
         console.error("[photo] file fetch not ok", { status: response.status, filePath: file.file_path });
         return [];
       }
-      const header = response.headers.get("content-type");
-      if (header !== null && !isImageContentType(header)) {
-        console.error("[photo] unexpected content-type", { header, filePath: file.file_path });
-        return [];
-      }
+      const mimeType = resolvePhotoMimeType(response.headers.get("content-type"));
       const buffer = Buffer.from(await response.arrayBuffer());
-      const mimeType = header ?? "image/jpeg";
       return [{ dataUrl: toDataUrl(buffer, mimeType), mimeType }];
     } catch (error) {
       console.error("[photo] download threw", error);

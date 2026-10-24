@@ -9,6 +9,7 @@ import {
   formatReplyQuote,
   isImageContentType,
   photoFallbackText,
+  resolvePhotoMimeType,
   toDataUrl,
   truncateQuote,
   type TelegramBot,
@@ -155,6 +156,13 @@ test("isImageContentType accepts image types and rejects non-images and null", (
   assert.equal(isImageContentType("image/jpeg"), true);
   assert.equal(isImageContentType("application/json"), false);
   assert.equal(isImageContentType(null), false);
+});
+
+test("resolvePhotoMimeType keeps image headers and falls back to jpeg for octet-stream", () => {
+  assert.equal(resolvePhotoMimeType("image/png"), "image/png");
+  assert.equal(resolvePhotoMimeType("image/jpeg"), "image/jpeg");
+  assert.equal(resolvePhotoMimeType("application/octet-stream"), "image/jpeg");
+  assert.equal(resolvePhotoMimeType(null), "image/jpeg");
 });
 
 test("truncateQuote and toDataUrl helpers", () => {
