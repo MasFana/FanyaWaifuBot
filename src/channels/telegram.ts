@@ -1,7 +1,13 @@
 import { Bot, InputFile } from "grammy";
 import type { AppConfig } from "../config.js";
 import type { Clock } from "../core/clock.js";
-import type { InboundEvent, InboundImage, MediaDelivery, OutboundMedia, WakeupEvent } from "../core/types.js";
+import type {
+  InboundEvent,
+  InboundImage,
+  MediaDelivery,
+  OutboundMedia,
+  WakeupEvent,
+} from "../core/types.js";
 import type { ForgetResult, MemoryService } from "../memory/service.js";
 import { OwnerQueue } from "../core/owner-queue.js";
 import { decideReply } from "../core/living-state.js";
@@ -9,7 +15,8 @@ import { decideReply } from "../core/living-state.js";
 const channelName = "telegram";
 const quietTime = /^([01]\d|2[0-3]):[0-5]\d$/;
 const skipProactiveToken = "[SKIP_PROACTIVE]";
-const sleepPhrase = /(\bmau tidur|\bpengen tidur|\bbobo dulu|\bmau bobo|\btidur dulu)/i;
+const sleepPhrase =
+  /(\bmau tidur|\bpengen tidur|\bbobo dulu|\bmau bobo|\btidur dulu)/i;
 const sleepDurationMs = 7 * 3_600_000;
 const userActiveGraceMs = 2 * 3_600_000;
 const proactiveCooldownMs = 3 * 3_600_000;
@@ -24,8 +31,13 @@ const shortBurstDebounceMs = 4500;
 const replyQuoteMax = 220;
 const photoMarker = "[Mengirim foto]";
 
-export function computeBurstDebounceMs(joinedLength: number, configuredMs: number): number {
-  return joinedLength < shortBurstLength ? Math.max(configuredMs, shortBurstDebounceMs) : configuredMs;
+export function computeBurstDebounceMs(
+  joinedLength: number,
+  configuredMs: number,
+): number {
+  return joinedLength < shortBurstLength
+    ? Math.max(configuredMs, shortBurstDebounceMs)
+    : configuredMs;
 }
 
 export function truncateQuote(text: string, max = replyQuoteMax): string {
@@ -33,7 +45,9 @@ export function truncateQuote(text: string, max = replyQuoteMax): string {
 }
 
 export function formatReplyQuote(text: string, fromBot: boolean): string {
-  return fromBot ? `[Membalas pesanmu: "${text}"]` : `[Membalas pesan sebelumnya: "${text}"]`;
+  return fromBot
+    ? `[Membalas pesanmu: "${text}"]`
+    : `[Membalas pesan sebelumnya: "${text}"]`;
 }
 
 export function toDataUrl(buffer: Buffer, mimeType: string): string {
@@ -51,7 +65,12 @@ export function isImageContentType(value: string | null): boolean {
 function buildInboundText(update: TelegramUpdate): string {
   const parts: string[] = [];
   if (update.replyToText) {
-    parts.push(formatReplyQuote(truncateQuote(update.replyToText), update.replyToFromBot ?? false));
+    parts.push(
+      formatReplyQuote(
+        truncateQuote(update.replyToText),
+        update.replyToFromBot ?? false,
+      ),
+    );
   }
   if (update.images !== undefined && update.images.length > 0) {
     parts.push(update.text ? `${photoMarker} ${update.text}` : photoMarker);
@@ -115,7 +134,9 @@ class GrammyBot implements TelegramBot {
       });
     });
     this.bot.on("message:photo", async (context) => {
-      const images = await this.downloadPhoto(context.message.photo.at(-1)?.file_id);
+      const images = await this.downloadPhoto(
+        context.message.photo.at(-1)?.file_id,
+      );
       const update: TelegramUpdate = {
         id: String(context.message.message_id),
         fromId: String(context.from.id),
@@ -123,7 +144,8 @@ class GrammyBot implements TelegramBot {
       };
       if (images.length > 0) {
         update.images = images;
-        if (context.message.caption !== undefined) update.text = context.message.caption;
+        if (context.message.caption !== undefined)
+          update.text = context.message.caption;
       } else {
         update.text = photoFallbackText(context.message.caption);
       }
@@ -132,7 +154,13 @@ class GrammyBot implements TelegramBot {
   }
 
   private replyContext(
-    reply: { text?: string; caption?: string; from?: { id: number; is_bot?: boolean } } | undefined,
+    reply:
+      | {
+          text?: string;
+          caption?: string;
+          from?: { id: number; is_bot?: boolean };
+        }
+      | undefined,
     botId: number,
   ): Pick<TelegramUpdate, "replyToText" | "replyToFromBot"> {
     if (reply === undefined) return {};
@@ -144,12 +172,16 @@ class GrammyBot implements TelegramBot {
     };
   }
 
-  private async downloadPhoto(fileId: string | undefined): Promise<InboundImage[]> {
+  private async downloadPhoto(
+    fileId: string | undefined,
+  ): Promise<InboundImage[]> {
     if (fileId === undefined) return [];
     try {
       const file = await this.bot.api.getFile(fileId);
       if (file.file_path === undefined) return [];
-      const response = await fetch(`https://api.telegram.org/file/bot${this.token}/${file.file_path}`);
+      const response = await fetch(
+        `https://api.telegram.org/file/bot${this.token}/${file.file_path}`,
+      );
       if (!response.ok) return [];
       const header = response.headers.get("content-type");
       if (header !== null && !isImageContentType(header)) return [];
@@ -177,7 +209,8 @@ class GrammyBot implements TelegramBot {
   }
 
   async sendMedia(chatId: string, media: OutboundMedia): Promise<void> {
-    const options = media.caption === undefined ? {} : { caption: media.caption };
+    const options =
+      media.caption === undefined ? {} : { caption: media.caption };
     if (media.kind === "audio") {
       await this.bot.api.sendAudio(chatId, media.url, options);
     } else if (media.kind === "photo") {
@@ -257,16 +290,22 @@ export class TelegramChannel {
       userId: owner.id,
       text,
       receivedAt: this.clock.now(),
-      ...(update.images === undefined || update.images.length === 0 ? {} : { images: update.images }),
+      ...(update.images === undefined || update.images.length === 0
+        ? {}
+        : { images: update.images }),
     };
     if (!this.memory.recordInbound(channelName, event)) return;
     this.memory.resetUnansweredProactiveCount(owner.id);
     this.lastUserActivityAt = event.receivedAt;
-    this.sleepUntil = sleepPhrase.test(raw) ? event.receivedAt + sleepDurationMs : null;
+    this.sleepUntil = sleepPhrase.test(raw)
+      ? event.receivedAt + sleepDurationMs
+      : null;
 
     if (raw.trimStart().startsWith("/")) {
       await this.flushPending(owner.id, { force: true });
-      await this.queue.enqueue(owner.id, async () => { await this.handleCommand(owner.id, { ...event, text: raw }); });
+      await this.queue.enqueue(owner.id, async () => {
+        await this.handleCommand(owner.id, { ...event, text: raw });
+      });
       return;
     }
 
@@ -301,7 +340,10 @@ export class TelegramChannel {
    * dan dijadwalkan ulang agar semua pesan yang diketik sambil Fanya "mikir"
    * menyatu jadi satu balasan susulan, bukan satu balasan per pesan.
    */
-  async flushPending(userId?: string, options: { force?: boolean } = {}): Promise<void> {
+  async flushPending(
+    userId?: string,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
     const owners = userId === undefined ? [...this.pending.keys()] : [userId];
     for (const id of owners) {
       const burst = this.pending.get(id);
@@ -320,10 +362,16 @@ export class TelegramChannel {
         receivedAt: this.clock.now(),
         ...(lastId === undefined ? {} : { storedMessageId: lastId }),
         storedMessageIds: burst.ids,
-        ...(burst.images === undefined || burst.images.length === 0 ? {} : { images: burst.images }),
+        ...(burst.images === undefined || burst.images.length === 0
+          ? {}
+          : { images: burst.images }),
       };
       await this.queue.enqueue(id, async () => {
-        if (decideReply(this.memory.getPersonaState(id), { focusThreshold: this.config.replies.focusDeferThreshold }) === "defer") {
+        if (
+          decideReply(this.memory.getPersonaState(id), {
+            focusThreshold: this.config.replies.focusDeferThreshold,
+          }) === "defer"
+        ) {
           await this.delay(this.config.replies.deferExtraMs);
         }
         await this.agent?.runInbound(event);
@@ -335,8 +383,13 @@ export class TelegramChannel {
     const burst = this.pending.get(ownerId);
     if (burst === undefined) return;
     if (burst.timer) clearTimeout(burst.timer);
-    const delay = computeBurstDebounceMs(burst.texts.join("\n").length, this.config.replies.debounceMs);
-    burst.timer = setTimeout(() => { void this.flushPending(ownerId); }, delay);
+    const delay = computeBurstDebounceMs(
+      burst.texts.join("\n").length,
+      this.config.replies.debounceMs,
+    );
+    burst.timer = setTimeout(() => {
+      void this.flushPending(ownerId);
+    }, delay);
   }
 
   async sendReply(userId: string, text: string): Promise<void> {
@@ -344,16 +397,22 @@ export class TelegramChannel {
   }
 
   /** Mengembalikan false bila rem proaktif menahan pengiriman, true bila benar-benar terkirim. */
-  async sendProactive(userId: string, text: string, options: SendProactiveOptions = {}): Promise<boolean> {
+  async sendProactive(
+    userId: string,
+    text: string,
+    options: SendProactiveOptions = {},
+  ): Promise<boolean> {
     if (text.trim().includes(skipProactiveToken)) return false;
-    const spontaneous = (options.triggerType ?? "spontaneous") === "spontaneous";
+    const spontaneous =
+      (options.triggerType ?? "spontaneous") === "spontaneous";
     const now = this.clock.now();
     if (spontaneous && this.holdsSpontaneous(text, now)) return false;
     await this.deliver(userId, text);
     if (spontaneous) {
       this.lastProactiveSentAt = this.clock.now();
       this.recentProactiveTexts.push(normalizeProactiveText(text));
-      while (this.recentProactiveTexts.length > recentProactiveLimit) this.recentProactiveTexts.shift();
+      while (this.recentProactiveTexts.length > recentProactiveLimit)
+        this.recentProactiveTexts.shift();
     }
     return true;
   }
@@ -361,18 +420,37 @@ export class TelegramChannel {
   /** Rem proaktif: tidur, owner baru aktif, jeda antar-pesan, atau teks yang berulang. */
   private holdsSpontaneous(text: string, now: number): boolean {
     if (this.sleepUntil !== null && now < this.sleepUntil) return true;
-    if (this.lastUserActivityAt !== null && now - this.lastUserActivityAt < userActiveGraceMs) return true;
-    if (this.lastProactiveSentAt !== null && now - this.lastProactiveSentAt < proactiveCooldownMs) return true;
+    if (
+      this.lastUserActivityAt !== null &&
+      now - this.lastUserActivityAt < userActiveGraceMs
+    )
+      return true;
+    if (
+      this.lastProactiveSentAt !== null &&
+      now - this.lastProactiveSentAt < proactiveCooldownMs
+    )
+      return true;
     const normalized = normalizeProactiveText(text);
-    return normalized.length > 0 && this.recentProactiveTexts.some((previous) => isSimilarProactiveText(previous, normalized));
+    return (
+      normalized.length > 0 &&
+      this.recentProactiveTexts.some((previous) =>
+        isSimilarProactiveText(previous, normalized),
+      )
+    );
   }
 
-  async sendMedia(userId: string, media: OutboundMedia): Promise<MediaDelivery> {
+  async sendMedia(
+    userId: string,
+    media: OutboundMedia,
+  ): Promise<MediaDelivery> {
     try {
       await this.bot.sendMedia(this.resolveChatId(userId), media);
       return "media";
     } catch {
-      const link = media.caption === undefined ? media.url : `${media.caption}\n${media.url}`;
+      const link =
+        media.caption === undefined
+          ? media.url
+          : `${media.caption}\n${media.url}`;
       await this.bot.sendMessage(this.resolveChatId(userId), link);
       return "link";
     }
@@ -571,31 +649,36 @@ export class TelegramChannel {
 export function sanitizeModelOutput(rawText: string): string {
   let cleaned = rawText;
 
-  // 0. Hapus kebocoran aksara Mandarin/Hanzi/CJK.
+  // 0. Hapus kebocoran aksara Hanzi/Kanji
   cleaned = cleaned.replace(/[\u4e00-\u9fff\u3400-\u4dbf]+/g, "");
 
-  // 1. Buka bungkus **bold** dan __underline/bold__ (pertahankan teks di dalamnya)
+  // === TAMBAHKAN INI: Ganti em dash (—), en dash (–), atau double hyphen (--) jadi koma atau spasi ===
+  cleaned = cleaned.replace(/—|–|--/g, ", ");
+
+  // 1. Buka bungkus **bold** dan __underline__
   cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
   cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
 
-  // 2. Hapus narasi roleplay *aksi* (diawali & diakhiri huruf, ada spasi) tanpa merusak kaomoji berasterisk
-  cleaned = cleaned.replace(/(?<!\*)\*([a-zA-Z][^*\n]*?\s+[^*\n]*?[a-zA-Z])\*(?!\*)/g, " ");
+  // 2. Hapus narasi roleplay *aksi*
+  cleaned = cleaned.replace(
+    /(?<!\*)\*([a-zA-Z][^*\n]*?\s+[^*\n]*?[a-zA-Z])\*(?!\*)/g,
+    " ",
+  );
 
-  // 3. Hapus markdown heading, bullet points (- / • / *), atau numbered list (1.) di awal baris
+  // 3. Hapus markdown heading (#), bullet points (- / • / *), atau angka list (1. / 2.) di awal baris
   cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*|\d+\.)[ \t]+/gm, "");
 
-  // 4. Ubah panah kaku khas bot rekap (→, ->, =>) jadi koma obrolan
+  // 4. Ubah panah kaku khas bot rekap (→, ->, =>) menjadi koma
   cleaned = cleaned.replace(/\s*(?:→|->|=>)\s*/g, ", ");
 
-  // 5. Buang emoji hati putih yang sering di-spam
-  cleaned = cleaned.replace(/🤍/g, "");
-
-  // 6. Rapikan spasi ganda akibat penghapusan aksi roleplay
+  // 5. Rapikan spasi ganda (terutama jika em dash diganti koma/spasi)
   cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
-  // 7. Runtuhkan "menu pertanyaan" (>=2 baris berakhiran "?") jadi satu pesan mengalir
-  const questionLines = cleaned.split("\n").filter((line) => line.trim().length > 0);
+  // 7. Runtuhkan "menu pertanyaan" beruntun
+  const questionLines = cleaned
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
   if (
     questionLines.length >= 2 &&
     questionLines.filter((line) => line.trim().endsWith("?")).length >= 2
@@ -613,7 +696,10 @@ export function sanitizeModelOutput(rawText: string): string {
  *    pada batas kalimat agar tidak terlihat seperti tembok teks.
  * 3. Semua balon dibatasi maksimum `maxBubbles`; kelebihannya digabung ke balon terakhir.
  */
-export function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
+export function splitDynamicBubbles(
+  rawText: string,
+  maxBubbles: number,
+): string[] {
   const sanitized = sanitizeModelOutput(rawText);
   if (!sanitized) return [];
 
@@ -626,14 +712,17 @@ export function splitDynamicBubbles(rawText: string, maxBubbles: number): string
 
   const first = paragraphs[0]!;
   // Paragraf pertama yang sangat pendek = reaksi spontan; biarkan jadi balon kedua.
-  const leadingReaction = paragraphs.length > 1 && first.length <= reactionLength;
-  if (sanitized.length <= shortMessageMs && !leadingReaction) return [humanizeBubble(sanitized)];
+  const leadingReaction =
+    paragraphs.length > 1 && first.length <= reactionLength;
+  if (sanitized.length <= shortMessageMs && !leadingReaction)
+    return [humanizeBubble(sanitized)];
 
   const rest = leadingReaction ? paragraphs.slice(1) : paragraphs;
   const groups: string[] = [];
   let current = "";
   for (const paragraph of rest) {
-    const candidate = current.length === 0 ? paragraph : `${current}\n\n${paragraph}`;
+    const candidate =
+      current.length === 0 ? paragraph : `${current}\n\n${paragraph}`;
     if (current.length > 0 && candidate.length > mergeCeiling) {
       groups.push(current);
       current = paragraph;
@@ -653,7 +742,10 @@ export function splitDynamicBubbles(rawText: string, maxBubbles: number): string
     const sentences = group.match(/[^.!?]+[.!?]*\s*/g) ?? [group];
     let accumulated = "";
     for (const sentence of sentences) {
-      if ((accumulated + sentence).trim().length > sentenceSplitCeiling && accumulated.trim()) {
+      if (
+        (accumulated + sentence).trim().length > sentenceSplitCeiling &&
+        accumulated.trim()
+      ) {
         bubbles.push(humanizeBubble(accumulated));
         accumulated = sentence;
       } else {
@@ -683,7 +775,10 @@ function isSimilarProactiveText(a: string, b: string): boolean {
 
 function capBubbles(bubbles: string[], maxBubbles: number): string[] {
   if (bubbles.length <= maxBubbles) return bubbles;
-  return [...bubbles.slice(0, maxBubbles - 1), bubbles.slice(maxBubbles - 1).join("\n")];
+  return [
+    ...bubbles.slice(0, maxBubbles - 1),
+    bubbles.slice(maxBubbles - 1).join("\n"),
+  ];
 }
 
 function humanizeBubble(raw: string): string {
