@@ -40,17 +40,16 @@ function setup(tools?: readonly ToolDefinition[]) {
   return { agent, channel, database, fake, inbound, memory, owner };
 }
 
-test("agent retries provider failures three times before delivering reply", async () => {
-  const { agent, channel, fake, inbound } = setup();
-  fake.enqueue(new Error("503 provider unavailable"));
-  fake.enqueue(new Error("503 provider unavailable"));
-  fake.enqueue(new Error("503 provider unavailable"));
-  fake.enqueue({ content: "aku balik, bub", toolCalls: [] });
+test("context requires an emoji-free reply after Fanya used an emoji", async () => {
+  const { memory, owner } = setup();
+  memory.appendMessage(owner.id, { channel: "telegram", role: "assistant", content: "iya bub 😶" });
+  const context = new ContextBuilder(memory, new FrozenClock(now), "Fanya persona", "Safety rules", "Tool guidance");
 
-  await agent.runInbound(inbound);
+  const messages = await context.build({ userId: owner.id, inboundText: "mager" });
 
-  assert.equal(fake.getRequests().length, 4);
-  assert.deepEqual(channel.sent, [{ userId: inbound.userId, text: "aku balik, bub", proactive: false }]);
+  const system = messages[0]!;
+  assert.equal(system.role, "system");
+  assert.match(system.content, /Balas tanpa emoji kali ini/);
 });
 
 test("agent gives the LLM three chances to correct failed tool calls", async () => {

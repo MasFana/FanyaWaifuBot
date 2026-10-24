@@ -90,7 +90,7 @@ export class Agent {
       try {
         response = hasImageParts(messages)
           ? await this.llm.complete(request)
-          : await retry(() => this.llm.complete(request));
+          : this.llm.handlesRetries ? await this.llm.complete(request) : await retry(() => this.llm.complete(request));
       } catch (error) {
         if (!hasImageParts(messages)) throw error;
         console.error("[vision] provider rejected image turn, retrying text-only", error);

@@ -18,6 +18,8 @@ const defaultSleep: Sleep = async (milliseconds) => {
 };
 
 export class OpenAIProvider implements LLMProvider {
+  readonly handlesRetries = true;
+
   constructor(
     private readonly client: ChatCompletionClient,
     private readonly sleep: Sleep = defaultSleep,
@@ -27,14 +29,14 @@ export class OpenAIProvider implements LLMProvider {
   async complete(request: LLMRequest): Promise<LLMResponse> {
     const input = mapRequest(request, this.defaultModel);
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         const message = (await this.client.create(input)).choices[0]?.message;
         if (message === undefined) throw new Error("OpenAI completion contained no choices");
         return { content: message.content, toolCalls: (message.tool_calls ?? []).map(mapToolCall) };
       } catch (error) {
-        if (!isRetryable(error) || attempt === 2) throw error;
-        await this.sleep(100 * 2 ** attempt);
+        if (!isRetryable(error) || attempt === 4) throw error;
+        await this.sleep(2_000 * 2 ** attempt);
       }
     }
     throw new Error("Unreachable retry state");

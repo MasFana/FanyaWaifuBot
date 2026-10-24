@@ -1,6 +1,7 @@
 import type { LLMRequest, LLMResponse } from "../core/types.js";
 
 export interface LLMProvider {
+  handlesRetries?: boolean;
   complete(request: LLMRequest): Promise<LLMResponse>;
 }
 

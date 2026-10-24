@@ -102,22 +102,38 @@ test("OpenAI provider maps multimodal user content to text and image_url parts",
   }]);
 });
 
-test("OpenAI provider retries 429, 5xx, and proven network failures no more than three attempts", async () => {
+test("OpenAI provider retries 429, 5xx, and proven network failures with exponential backoff", async () => {
   let attempts = 0;
   const delays: number[] = [];
   const client: ChatCompletionClient = {
     async create() {
       attempts += 1;
       if (attempts === 1) throw Object.assign(new Error("rate limited"), { status: 429 });
-      if (attempts === 2) throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }) });
+      if (attempts < 5) throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }) });
       return { choices: [{ message: { content: "pulih" } }] };
     },
   };
   const provider = new OpenAIProvider(client, async (milliseconds) => { delays.push(milliseconds); });
 
   assert.equal((await provider.complete(request)).content, "pulih");
-  assert.equal(attempts, 3);
-  assert.deepEqual(delays, [100, 200]);
+  assert.equal(attempts, 5);
+  assert.deepEqual(delays, [2_000, 4_000, 8_000, 16_000]);
+});
+
+test("OpenAI provider surfaces the fifth retryable failure", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const failure = Object.assign(new Error("rate limited"), { status: 429 });
+  const provider = new OpenAIProvider({
+    async create() {
+      attempts += 1;
+      throw failure;
+    },
+  }, async (milliseconds) => { delays.push(milliseconds); });
+
+  await assert.rejects(provider.complete(request), /rate limited/);
+  assert.equal(attempts, 5);
+  assert.deepEqual(delays, [2_000, 4_000, 8_000, 16_000]);
 });
 
 test("OpenAI provider does not retry non-retryable failures", async () => {
