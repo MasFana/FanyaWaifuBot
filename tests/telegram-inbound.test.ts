@@ -6,6 +6,7 @@ import { openDatabase, migrate } from "../src/db/index.js";
 import { MemoryService } from "../src/memory/service.js";
 import {
   TelegramChannel,
+  downloadPhotoWithRetry,
   formatReplyQuote,
   isImageContentType,
   photoFallbackText,
@@ -158,10 +159,27 @@ test("a caption-less photo marker text still produces a turn", async () => {
   assert.equal(events[0]!.images, undefined);
 });
 
-test("photoFallbackText returns the caption when present, else the marker", () => {
-  assert.equal(photoFallbackText("meme nih"), "meme nih");
-  assert.equal(photoFallbackText(), "[Mengirim foto]");
-  assert.equal(photoFallbackText(undefined), "[Mengirim foto]");
+test("photoFallbackText preserves caption and marks unavailable images", () => {
+ assert.match(photoFallbackText("meme nih"), /meme nih/u);
+ assert.match(photoFallbackText("meme nih"), /Jangan menyebut isi atau menebak foto ini/u);
+ assert.match(photoFallbackText(), /Jangan menyebut isi atau menebak foto ini/u);
+ assert.match(photoFallbackText(undefined), /Jangan menyebut isi atau menebak foto ini/u);
+});
+
+test("photo download retries once and does not turn a failed image into a vision turn", async () => {
+  let attempts = 0;
+  const images = await downloadPhotoWithRetry(
+    "https://api.telegram.org/file/bot-token/photo.jpg",
+    async () => {
+      attempts += 1;
+      throw new TypeError("fetch failed", { cause: Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }) });
+    },
+  );
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(images, []);
+  assert.match(photoFallbackText(), /Jangan menyebut isi atau menebak foto ini/u);
+  assert.match(photoFallbackText("ini apaan"), /ini apaan/u);
 });
 
 test("isImageContentType accepts image types and rejects non-images and null", () => {

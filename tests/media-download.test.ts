@@ -73,19 +73,19 @@ test("download_media fetches the platform endpoint and sends each extracted item
 
     assert.match(calls[0] ?? "", /^https:\/\/backend1\.tioo\.eu\.org\/youtube\?url=https%3A%2F%2Fwww\.youtube\.com%2Fwatch%3Fv%3Dx$/u);
     assert.deepEqual(sent, [{ kind: "audio", url: "https://cdn/a.mp3", caption: "Song — A" }]);
-    assert.deepEqual(result, { platform: "youtube", sent: 1, links: [] });
+    assert.deepEqual(result, { platform: "youtube", sent: 1, fallbackLinksSent: 0 });
   } finally {
     restore();
   }
 });
 
-test("download_media reports items that fall back to a text link", async () => {
+test("download_media reports fallback links without repeating URLs already sent", async () => {
   const restore = stubFetch([], [{ status: true, url: "https://cdn/1.mp4" }, { status: true, url: "https://cdn/2.jpg" }]);
   const context = { userId: "u", sendMedia: async () => "link" as const };
   try {
     const result = await downloadMedia.execute({ url: "https://www.instagram.com/reel/x/" }, context);
 
-    assert.deepEqual(result, { platform: "instagram", sent: 0, links: ["https://cdn/1.mp4", "https://cdn/2.jpg"] });
+    assert.deepEqual(result, { platform: "instagram", sent: 0, fallbackLinksSent: 2 });
   } finally {
     restore();
   }

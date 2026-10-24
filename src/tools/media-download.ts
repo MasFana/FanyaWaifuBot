@@ -236,15 +236,14 @@ const tool: ToolDefinition = {
     const items = extractMedia(platform, payload, parsed.audio ?? false);
     if (items.length === 0) throw new Error(mediaFailureMessage);
     let sent = 0;
-    const links: string[] = [];
+    let fallbackLinksSent = 0;
     for (const item of items) {
       const delivery = context.sendMedia ? await context.sendMedia(item) : "link";
       if (delivery === "media") sent += 1;
-      else links.push(item.url);
+      else fallbackLinksSent += 1;
     }
-    return { platform, sent, links };
+    return { platform, sent, fallbackLinksSent };
   },
 };
 
 export default tool;
-

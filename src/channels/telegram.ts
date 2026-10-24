@@ -30,6 +30,7 @@ const shortBurstLength = 20;
 const shortBurstDebounceMs = 4500;
 const replyQuoteMax = 220;
 const photoMarker = "[Mengirim foto]";
+const photoUnavailableMarker = "[SYSTEM: Foto gagal diunduh. Jangan menyebut isi atau menebak foto ini. Bilang singkat kalau fotonya belum kebaca dan minta kirim ulang.]";
 
 export function computeBurstDebounceMs(
  joinedLength: number,
@@ -55,7 +56,29 @@ export function toDataUrl(buffer: Buffer, mimeType: string): string {
 }
 
 export function photoFallbackText(caption?: string): string {
- return caption ?? photoMarker;
+ return caption === undefined
+  ? photoUnavailableMarker
+  : `${caption}\n${photoUnavailableMarker}`;
+}
+
+export async function downloadPhotoWithRetry(
+ url: string,
+ fetcher: (url: string) => Promise<Response> = fetch,
+): Promise<InboundImage[]> {
+ for (let attempt = 0; attempt < 2; attempt += 1) {
+  try {
+   const response = await fetcher(url);
+   if (!response.ok) {
+    if (attempt === 1) return [];
+    continue;
+   }
+   const mimeType = resolvePhotoMimeType(response.headers.get("content-type"));
+   return [{ dataUrl: toDataUrl(Buffer.from(await response.arrayBuffer()), mimeType), mimeType }];
+  } catch {
+   if (attempt === 1) return [];
+  }
+ }
+ return [];
 }
 
 export function isImageContentType(value: string | null): value is string {
@@ -190,16 +213,11 @@ class GrammyBot implements TelegramBot {
     console.error("[photo] getFile returned no file_path", { fileId });
     return [];
    }
-   const response = await fetch(
+   const images = await downloadPhotoWithRetry(
     `https://api.telegram.org/file/bot${this.token}/${file.file_path}`,
    );
-   if (!response.ok) {
-    console.error("[photo] file fetch not ok", { status: response.status, filePath: file.file_path });
-    return [];
-   }
-   const mimeType = resolvePhotoMimeType(response.headers.get("content-type"));
-   const buffer = Buffer.from(await response.arrayBuffer());
-   return [{ dataUrl: toDataUrl(buffer, mimeType), mimeType }];
+   if (images.length === 0) console.error("[photo] file fetch failed after retry", { filePath: file.file_path });
+   return images;
   } catch (error) {
    console.error("[photo] download threw", error);
    return [];
@@ -467,7 +485,8 @@ export class TelegramChannel {
   try {
    await this.bot.sendMedia(this.resolveChatId(userId), media);
    return "media";
-  } catch {
+  } catch (error) {
+   console.error("[media] Telegram upload failed; sent link fallback", error);
    const link =
     media.caption === undefined
      ? media.url
