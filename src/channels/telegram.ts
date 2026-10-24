@@ -58,7 +58,7 @@ export function photoFallbackText(caption?: string): string {
   return caption ?? photoMarker;
 }
 
-export function isImageContentType(value: string | null): boolean {
+export function isImageContentType(value: string | null): value is string {
   return value !== null && value.startsWith("image/");
 }
 
