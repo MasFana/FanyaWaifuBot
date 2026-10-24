@@ -23,15 +23,16 @@ export class ContextBuilder {
     private readonly guardrails: string,
     private readonly toolGuidance: string,
     private readonly ngambekEnabled = false,
+    private readonly ownerName = "Sayang",
   ) {}
 
-  static async load(memory: MemoryService, clock: Clock, harnessDirectory = "harness", ngambekEnabled = false): Promise<ContextBuilder> {
+  static async load(memory: MemoryService, clock: Clock, harnessDirectory = "harness", ngambekEnabled = false, ownerName = "Sayang"): Promise<ContextBuilder> {
     const [persona, guardrails, toolGuidance] = await Promise.all([
       readFile(join(harnessDirectory, "persona.md"), "utf8"),
       readFile(join(harnessDirectory, "guardrails.md"), "utf8"),
       readFile(join(harnessDirectory, "tool-guidance.md"), "utf8"),
     ]);
-    return new ContextBuilder(memory, clock, persona, guardrails, toolGuidance, ngambekEnabled);
+    return new ContextBuilder(memory, clock, persona, guardrails, toolGuidance, ngambekEnabled, ownerName);
   }
 
   async build(input: ContextInput): Promise<LLMMessage[]> {
@@ -44,6 +45,7 @@ export class ContextBuilder {
     this.memory.setPersonaState(input.userId, living);
     const agenda = exported.commitments.filter((item) => item.status === "pending" && item.eventAt !== null && item.eventAt >= now - 86_400_000 && item.eventAt <= now + 3 * 86_400_000);
     const dynamic = [
+      `Panggilan owner: "${this.ownerName}". Pakai ini (atau variasi manja singkatnya) sebagai panggilan utama; jangan mengulang "sayang" di tiap pesan.`,
       `Waktu sekarang: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short", timeZone: exported.owner.timezone }).format(now)} (zona ${exported.owner.timezone}; tanggal ISO ${new Intl.DateTimeFormat("sv-SE", { timeZone: exported.owner.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)}). Acuan tanggal: sapaan pagi/siang/sore/malam ikut jam lokal ini; kalau owner minta jam yang belum lewat hari ini (mis. "nanti jam 3"), jadwalkan HARI INI, bukan besok.`,
       `Jeda sejak chat terakhir owner: ${state.lastUserMessageAt === null ? "Belum ada" : formatElapsed(now - state.lastUserMessageAt)}`,
       `Keadaan sekarang: ${renderStateCue(living, mood)}`,

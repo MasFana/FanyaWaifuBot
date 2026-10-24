@@ -223,11 +223,12 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
   memory.setPersonaState(owner.id, { ...defaultPersonaState, affection: 0.4, recentOpenings: ["halo"] });
   database.prepare("UPDATE conversations SET summary = ? WHERE user_id = ?").run("Ringkasan lama", owner.id);
   for (let index = 0; index < 21; index += 1) memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: `riwayat-${index}` });
-  const builder = new ContextBuilder(memory, new FrozenClock(now), "Persona", "Guardrails", "Tools");
+  const builder = new ContextBuilder(memory, new FrozenClock(now), "Persona", "Guardrails", "Tools", false, "Bub");
 
   const messages = await builder.build({ userId: owner.id, inboundText: "halo" });
 
   const text = messages.map((message) => message.content).join("\n");
+  assert.match(text, /Panggilan owner: "Bub"/u);
   assert.match(text, /Persona.*Guardrails.*Tools/us);
   assert.match(text, /1 jam 20 menit yang lalu.*Keadaan sekarang:.*energi hangat.*afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
   assert.doesNotMatch(text, /NaN|Infinity/u);
