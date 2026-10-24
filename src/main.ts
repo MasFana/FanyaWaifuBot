@@ -59,7 +59,7 @@ export async function createApplication(options: ApplicationOptions): Promise<Ap
   try {
     const memory = new MemoryService(database, clock);
     const queue = new OwnerQueue();
-    const context = await ContextBuilder.load(memory, clock, options.harnessDirectory ?? "harness");
+    const context = await ContextBuilder.load(memory, clock, options.harnessDirectory ?? "harness", config.replies.ngambekEnabled);
     const writer = new PostTurnWriter(provider, memory, clock, config.llm.extractorModel);
     const builtins = [
       ...createBuiltinTools({ clock, timeZone: config.owner.timezone }),

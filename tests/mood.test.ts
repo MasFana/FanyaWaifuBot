@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultPersonaState } from "../src/core/persona-state.js";
-import { applyOwnerSentiment, computeMood } from "../src/core/mood.js";
+import { applyOwnerSentiment, computeMood, ngambekMinMs } from "../src/core/mood.js";
 
 const tz = "Asia/Jakarta";
 
@@ -35,13 +35,17 @@ test("system turns are ignored, rude text lowers affection", () => {
   assert.ok(rude.affection < start.affection);
 });
 
-test("rude message starts ngambek and a kind follow-up luluh", () => {
+test("rude message starts ngambek; one apology does not luluh before the minimum", () => {
   const now = Date.UTC(2026, 9, 23, 5, 0);
   const rude = applyOwnerSentiment(defaultPersonaState, "ntahlah", now);
   assert.equal(rude.ngambekUntil, now + 5 * 3_600_000);
   assert.ok((rude.ngambekUntil ?? 0) > now);
-  const kind = applyOwnerSentiment(rude, "maaf ya sayang", now + 1_000);
-  assert.equal(kind.ngambekUntil, null);
+
+  const early = applyOwnerSentiment(rude, "maaf ya sayang", now + 1_000);
+  assert.equal(early.ngambekUntil, now + 5 * 3_600_000);
+
+  const late = applyOwnerSentiment(rude, "maaf ya sayang", now + ngambekMinMs + 1);
+  assert.equal(late.ngambekUntil, null);
 });
 
 test("rude detection uses word boundaries, not substrings", () => {
@@ -81,4 +85,12 @@ test("ngambek influence is off while flag disabled", () => {
   const mood = computeMood({ now, timeZone: tz, lastUserMessageAt: now - 1_000, state });
   assert.equal(mood.ngambek, false);
   assert.doesNotMatch(mood.cue, /ngambek|dingin|cuek/u);
+});
+
+test("ngambek cue shows when the flag is enabled", () => {
+  const now = Date.UTC(2026, 9, 23, 5, 0);
+  const state = { ...defaultPersonaState, ngambekUntil: now + 3_600_000 };
+  const mood = computeMood({ now, timeZone: tz, lastUserMessageAt: now - 1_000, state, ngambekEnabled: true });
+  assert.equal(mood.ngambek, true);
+  assert.match(mood.cue, /ngambek/u);
 });

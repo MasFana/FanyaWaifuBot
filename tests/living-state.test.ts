@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultPersonaState, parsePersonaState } from "../src/core/persona-state.js";
 import { activityPool, decideReply, renderStateCue, tickLivingState } from "../src/core/living-state.js";
-import { computeMood } from "../src/core/mood.js";
+import { applyOwnerSentiment, computeMood } from "../src/core/mood.js";
 
 const tz = "Asia/Jakarta";
 const now = Date.UTC(2026, 9, 24, 10, 0);
@@ -57,6 +57,15 @@ test("recent owner activity lowers wantCompany", () => {
   const next = tickLivingState(base, { now, lastUserMessageAt: now, seed: "owner" });
 
   assert.ok(next.drives.wantCompany < 0.9);
+});
+
+test("rude text raises boundary which decays over time", () => {
+  const rude = applyOwnerSentiment(defaultPersonaState, "ntahlah males", now);
+  assert.ok(rude.drives.boundary > 0);
+
+  const decayed = tickLivingState(rude, { now: now + 3_600_000, lastUserMessageAt: now, seed: "owner" });
+
+  assert.ok(decayed.drives.boundary < rude.drives.boundary);
 });
 
 test("decideReply defers only when an activity is active and focus is high", () => {

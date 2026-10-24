@@ -21,15 +21,16 @@ export class ContextBuilder {
     private readonly persona: string,
     private readonly guardrails: string,
     private readonly toolGuidance: string,
+    private readonly ngambekEnabled = false,
   ) {}
 
-  static async load(memory: MemoryService, clock: Clock, harnessDirectory = "harness"): Promise<ContextBuilder> {
+  static async load(memory: MemoryService, clock: Clock, harnessDirectory = "harness", ngambekEnabled = false): Promise<ContextBuilder> {
     const [persona, guardrails, toolGuidance] = await Promise.all([
       readFile(join(harnessDirectory, "persona.md"), "utf8"),
       readFile(join(harnessDirectory, "guardrails.md"), "utf8"),
       readFile(join(harnessDirectory, "tool-guidance.md"), "utf8"),
     ]);
-    return new ContextBuilder(memory, clock, persona, guardrails, toolGuidance);
+    return new ContextBuilder(memory, clock, persona, guardrails, toolGuidance, ngambekEnabled);
   }
 
   async build(input: ContextInput): Promise<LLMMessage[]> {
@@ -37,7 +38,7 @@ export class ContextBuilder {
     const state = this.memory.getPromptState(input.userId);
     const personaState = this.memory.getPersonaState(input.userId);
     const now = this.clock.now();
-    const mood = computeMood({ now, timeZone: exported.owner.timezone, lastUserMessageAt: state.lastUserMessageAt, state: personaState });
+    const mood = computeMood({ now, timeZone: exported.owner.timezone, lastUserMessageAt: state.lastUserMessageAt, state: personaState, ngambekEnabled: this.ngambekEnabled });
     const living = tickLivingState(personaState, { now, lastUserMessageAt: state.lastUserMessageAt, seed: input.userId });
     this.memory.setPersonaState(input.userId, living);
     const agenda = exported.commitments.filter((item) => item.status === "pending" && item.eventAt !== null && item.eventAt >= now - 86_400_000 && item.eventAt <= now + 3 * 86_400_000);

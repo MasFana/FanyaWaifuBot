@@ -16,17 +16,18 @@ const kindDelta = 0.05;
 const affectionBaseline = 0.7;
 const affectionTauMs = 6 * 3_600_000;
 const ngambekDurationMs = 5 * 3_600_000;
-// ponytail: ngambek influence is log-only until a calibration log is reviewed and the
-// wording is tuned; remove the console.warn and flip this to true once calibrated.
-const ngambekInfluenceEnabled = false;
+/** Minimum waktu sebelum permintaan maaf bisa meluluhkan ngambek (konsisten, bukan yes-man). */
+export const ngambekMinMs = 30 * 60_000;
+const boundaryRise = 0.4;
 
-export function computeMood(input: { now: number; timeZone: string; lastUserMessageAt: number | null; state: PersonaState }): MoodState {
+export function computeMood(input: { now: number; timeZone: string; lastUserMessageAt: number | null; state: PersonaState; ngambekEnabled?: boolean }): MoodState {
+  const enabled = input.ngambekEnabled ?? false;
   const hour = localHour(input.now, input.timeZone);
   const energy: Energy = hour < 7 || hour >= 21 ? "rendah" : hour >= 17 ? "hangat" : "sedang";
   const missYou = input.lastUserMessageAt !== null && input.now - input.lastUserMessageAt > missYouThresholdMs;
   const rawNgambek = input.state.ngambekUntil !== null && input.now < input.state.ngambekUntil;
-  if (rawNgambek && !ngambekInfluenceEnabled) console.warn("[mood] ngambek decision", { now: input.now });
-  const ngambek = ngambekInfluenceEnabled ? rawNgambek : false;
+  if (rawNgambek && !enabled) console.warn("[mood] ngambek decision", { now: input.now });
+  const ngambek = enabled ? rawNgambek : false;
   const affection = Number.isFinite(input.state.affection) ? input.state.affection : 0;
   return { energy, missYou, ngambek, affection, cue: buildCue(energy, missYou, ngambek, affection) };
 }
@@ -37,7 +38,17 @@ export function applyOwnerSentiment(state: PersonaState, text: string, now: numb
   const cuek = isCuek(normalized);
   const decayed = decayAffection(state.affection, state.updatedAt, now);
   const affection = clamp(decayed + (cuek ? rudeDelta : kindDelta), 0, 1);
-  return { ...state, affection, ngambekUntil: cuek ? now + ngambekDurationMs : null, updatedAt: now };
+
+  let ngambekUntil = state.ngambekUntil;
+  if (cuek) {
+    ngambekUntil = now + ngambekDurationMs;
+  } else if (ngambekUntil !== null && now < ngambekUntil) {
+    const startedAt = ngambekUntil - ngambekDurationMs;
+    if (now - startedAt >= ngambekMinMs) ngambekUntil = null;
+  }
+
+  const boundary = clamp(state.drives.boundary + (cuek ? boundaryRise : 0), 0, 1);
+  return { ...state, affection, ngambekUntil, drives: { ...state.drives, boundary }, updatedAt: now };
 }
 
 function isCuek(normalized: string): boolean {
