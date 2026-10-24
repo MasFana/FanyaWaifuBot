@@ -40,7 +40,7 @@ function setup(tools?: readonly ToolDefinition[]) {
   return { agent, channel, database, fake, inbound, memory, owner };
 }
 
-test("context requires an emoji-free reply after Fanya used an emoji", async () => {
+test("context treats emoji as optional after Fanya used an emoji", async () => {
   const { memory, owner } = setup();
   memory.appendMessage(owner.id, { channel: "telegram", role: "assistant", content: "iya bub 😶" });
   const context = new ContextBuilder(memory, new FrozenClock(now), "Fanya persona", "Safety rules", "Tool guidance");
@@ -49,7 +49,8 @@ test("context requires an emoji-free reply after Fanya used an emoji", async () 
 
   const system = messages[0]!;
   assert.equal(system.role, "system");
-  assert.match(system.content, /Balas tanpa emoji kali ini/);
+  assert.match(system.content, /emoji atau kaomoji boleh dipakai sesekali/i);
+  assert.doesNotMatch(system.content, /Balas tanpa emoji kali ini/);
 });
 
 test("agent gives the LLM three chances to correct failed tool calls", async () => {
@@ -307,8 +308,8 @@ test("context includes complete PRD dynamic blocks and honors agenda/history bou
 
   const text = messages.map((message) => message.content).join("\n");
   assert.match(text, /Panggilan owner: "Bub"/u);
-  assert.match(text, /Persona.*Guardrails.*Tools/us);
-  assert.match(text, /1 jam 20 menit yang lalu.*Keadaan sekarang:.*energi hangat.*afeksi 0\.4.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
+  assert.match(text, /Guardrails.*Tools.*Persona/us);
+  assert.match(text, /1 jam 20 menit yang lalu.*Suasana & Kegiatan Fanya sekarang:.*Suka teh hijau.*Presentasi.*bawa slide.*Batas tiga hari.*Ringkasan lama.*halo/us);
   assert.doesNotMatch(text, /NaN|Infinity/u);
   assert.doesNotMatch(text, /Terlalu jauh|riwayat-0/u);
   assert.match(text, /riwayat-20/u);

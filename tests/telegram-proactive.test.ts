@@ -64,16 +64,19 @@ test("splitDynamicBubbles allows a second bubble for a short reaction opening", 
   assert.equal(bubbles[0], "ehh kok gitu");
 });
 
-test("splitDynamicBubbles collapses a short message with a long opening into one bubble", () => {
+test("splitDynamicBubbles preserves two paragraphs chosen by Fanya", () => {
   const raw = "aku tadi abis baca novel sampe bab terakhir nih ceritanya seru banget\n\nkamu udah makan belum?";
 
-  assert.equal(splitDynamicBubbles(raw, 4).length, 1);
+  assert.deepEqual(splitDynamicBubbles(raw, 4), [
+    "aku tadi abis baca novel sampe bab terakhir nih ceritanya seru banget",
+    "kamu udah makan belum?",
+  ]);
 });
 
-test("splitDynamicBubbles caps a long rambling at two bubbles", () => {
+test("splitDynamicBubbles respects configured bubble cap", () => {
   const raw = `${"A".repeat(200)}\n\n${"B".repeat(200)}\n\n${"C".repeat(200)}`;
 
-  assert.equal(splitDynamicBubbles(raw, 4).length, 2);
+  assert.equal(splitDynamicBubbles(raw, 2).length, 2);
 });
 
 test("sendProactive blocks spontaneous care while owner sleeps", async () => {

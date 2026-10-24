@@ -26,7 +26,7 @@ const environmentSchema = z.object({
   MAX_UNANSWERED_PROACTIVE: z.coerce.number().int().nonnegative().default(2),
   REPLY_DEBOUNCE_MS: z.coerce.number().int().nonnegative().default(8_000),
   REPLY_DEFER_EXTRA_MS: z.coerce.number().int().nonnegative().default(60_000),
-  REPLY_MAX_BUBBLES: z.coerce.number().int().positive().default(4),
+  REPLY_MAX_BUBBLES: z.coerce.number().int().positive().default(2),
   FOCUS_DEFER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   NGAMBEK_ENABLED: z.string().default("false").transform((value) => value.toLowerCase() === "true"),
   DATABASE_PATH: z.string().min(1).default("./data/fanya.db"),

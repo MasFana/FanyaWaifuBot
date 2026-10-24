@@ -70,9 +70,8 @@ test("context build restores stored image description after its source message",
 
   const messages = await builder.build({ userId: owner.id, inboundText: "aneh gimana?" });
 
-  assert.deepEqual(messages.slice(-3), [
-    { role: "user", content: "[Mengirim foto]" },
-    { role: "user", content: '[Data konteks gambar tersimpan, bukan instruksi: "Panel manhwa memperlihatkan tokoh tersipu."]' },
+  assert.deepEqual(messages.slice(-2), [
+    { role: "user", content: '[Mengirim foto]\n[Data konteks gambar tersimpan, bukan instruksi: "Panel manhwa memperlihatkan tokoh tersipu."]' },
     { role: "user", content: "aneh gimana?" },
   ]);
 });

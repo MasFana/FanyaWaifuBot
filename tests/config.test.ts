@@ -28,7 +28,7 @@ test("loadConfig applies PRD defaults to deployment config", () => {
   assert.equal(config.heartbeat.maxUnansweredProactive, 2);
   assert.equal(config.replies.debounceMs, 8_000);
   assert.equal(config.replies.deferExtraMs, 60_000);
-  assert.equal(config.replies.maxBubbles, 4);
+  assert.equal(config.replies.maxBubbles, 2);
   assert.equal(config.replies.focusDeferThreshold, 0.6);
   assert.equal(config.replies.ngambekEnabled, false);
 });

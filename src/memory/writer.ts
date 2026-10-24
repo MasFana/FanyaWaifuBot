@@ -25,6 +25,10 @@ export interface PostTurnInput {
   images?: readonly InboundImage[];
 }
 
+function stripJsonFence(text: string): string {
+  return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
 /** Extracts durable owner details after delivery; failures deliberately have no chat impact. */
 export class PostTurnWriter {
   private readonly inFlight = new Set<Promise<void>>();
@@ -47,7 +51,7 @@ export class PostTurnWriter {
     try {
       const response = await this.extractor.complete({ messages: [{ role: "user", content: input.ownerMessage }], tools: [], model: this.model });
       if (response.content !== null && response.toolCalls.length === 0) {
-        const parsed = extractionSchema.safeParse(JSON.parse(response.content) as unknown);
+        const parsed = extractionSchema.safeParse(JSON.parse(stripJsonFence(response.content)) as unknown);
         if (parsed.success) {
           for (const fact of parsed.data.facts) this.memory.upsertFact(input.userId, fact);
           for (const commitment of parsed.data.commitments) {

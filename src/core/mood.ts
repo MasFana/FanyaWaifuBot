@@ -29,7 +29,7 @@ export function computeMood(input: { now: number; timeZone: string; lastUserMess
   if (rawNgambek && !enabled) console.warn("[mood] ngambek decision", { now: input.now });
   const ngambek = enabled ? rawNgambek : false;
   const affection = Number.isFinite(input.state.affection) ? input.state.affection : 0;
-  return { energy, missYou, ngambek, affection, cue: buildCue(energy, missYou, ngambek, affection) };
+  return { energy, missYou, ngambek, affection, cue: buildCue(energy, hour, missYou, ngambek) };
 }
 
 export function applyOwnerSentiment(state: PersonaState, text: string, now: number): PersonaState {
@@ -52,6 +52,7 @@ export function applyOwnerSentiment(state: PersonaState, text: string, now: numb
 }
 
 function isCuek(normalized: string): boolean {
+  if (normalized.split(" ").length > 3) return false;
   if (/^gpp[.!?]*$/u.test(normalized)) return true;
   if (/\b(diem aja)\b/u.test(normalized)) return true;
   return normalized.split(" ").some((token) => /^(ntahlah|males|terserah)[.!?]*$/u.test(token));
@@ -64,22 +65,17 @@ function decayAffection(affection: number, updatedAt: number, now: number): numb
   return affectionBaseline + (affection - affectionBaseline) * Math.exp(-elapsed / affectionTauMs);
 }
 
-function localHour(now: number, timeZone: string): number {
+export function localHour(now: number, timeZone: string): number {
   const formatted = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(now);
   return Number.parseInt(formatted, 10);
 }
 
-function buildCue(energy: Energy, missYou: boolean, ngambek: boolean, affection: number): string {
-  const parts = [energyWord(energy)];
-  if (missYou) parts.push("kangen karena kamu lama ga nyapa");
-  if (ngambek) parts.push("masih ngambek");
-  parts.push(`afeksi ${affection.toFixed(1)}`);
+function buildCue(energy: Energy, hour: number, missYou: boolean, ngambek: boolean): string {
+  const timeVibe = hour < 7 ? "masih ngantuk berat, baru subuh/pagi" : hour >= 21 ? "mulai ngantuk, udah malam" : energy === "hangat" ? "santai sore/malam" : "segar";
+  const parts = [timeVibe];
+  if (missYou) parts.push("kangen karena lama ga dikabarin");
+  if (ngambek) parts.push("masih agak ngambek");
   return parts.join("; ");
-}
-
-function energyWord(energy: Energy): string {
-  if (energy === "rendah") return "ngantuk";
-  return energy === "hangat" ? "hangat" : "biasa aja";
 }
 
 function clamp(value: number, min: number, max: number): number {

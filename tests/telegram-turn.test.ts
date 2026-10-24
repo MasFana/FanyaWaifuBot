@@ -145,3 +145,18 @@ test("splitDynamicBubbles still splits a normal two-paragraph reply", () => {
   const bubbles = splitDynamicBubbles("Satu\n\nDua", 3);
   assert.deepEqual(bubbles, ["Satu", "Dua"]);
 });
+
+test("splitDynamicBubbles lets Fanya use configured bubble count", () => {
+  const bubbles = splitDynamicBubbles("satu\n\ndua\n\ntiga", 3);
+  assert.deepEqual(bubbles, ["satu", "dua", "tiga"]);
+});
+
+test("splitDynamicBubbles keeps a single paragraph together regardless of length", () => {
+  const raw = `${"capek ya sayang. ".repeat(30)}aku di sini bub`;
+  const bubbles = splitDynamicBubbles(
+    raw,
+    2,
+  );
+
+  assert.deepEqual(bubbles, [raw]);
+});

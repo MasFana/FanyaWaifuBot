@@ -21,11 +21,6 @@ const sleepDurationMs = 7 * 3_600_000;
 const userActiveGraceMs = 2 * 3_600_000;
 const proactiveCooldownMs = 3 * 3_600_000;
 const recentProactiveLimit = 5;
-const shortMessageMs = 260;
-const reactionLength = 45;
-const mergeCeiling = 280;
-const sentenceSplitCeiling = 380;
-const ordinaryBubbleCap = 2;
 const shortBurstLength = 20;
 const shortBurstDebounceMs = 4500;
 const replyQuoteMax = 220;
@@ -399,12 +394,12 @@ export class TelegramChannel {
      ? {}
      : { images: burst.images }),
    };
-   await this.queue.enqueue(id, async () => {
-    if (
-     decideReply(this.memory.getPersonaState(id), {
-      focusThreshold: this.config.replies.focusDeferThreshold,
-     }) === "defer"
-    ) {
+    await this.queue.enqueue(id, async () => {
+     if (
+      decideReply(this.memory.getPersonaState(id), {
+       focusThreshold: this.config.replies.focusDeferThreshold,
+      }) === "defer"
+     ) {
      let remaining = this.config.replies.deferExtraMs;
      while (remaining > 0) {
       await this.bot.sendChatAction(this.resolveChatId(id), "typing");
@@ -668,6 +663,9 @@ export class TelegramChannel {
    const bubble = bubbles[index];
    if (!bubble) continue;
 
+   // Jika mau kirim bubble ke-2 dst tapi user keburu ngetik pesan lanjutan baru, tahan bubble sisanya agar tidak tabrakan
+   if (index > 0 && this.pending.has(userId)) break;
+
    // Jeda mikir sejenak antar balon chat agar terasa seperti manusia yang lanjut ngetik
    if (index > 0) {
     await this.delay(100 + Math.floor(Math.random() * 200));
@@ -687,26 +685,22 @@ export class TelegramChannel {
  * 3. Menghapus bullet list atau markdown heading di awal baris.
  */
 export function sanitizeModelOutput(rawText: string): string {
- let cleaned = rawText;
+	let cleaned = rawText;
 
- // 0. Hapus kebocoran aksara Hanzi/Kanji
- cleaned = cleaned.replace(/[\u4e00-\u9fff\u3400-\u4dbf]+/g, "");
+	// 0. Hapus kebocoran aksara Hanzi/Kanji & glitch suffix menempel pasca tanda baca (misal: "ada apa?Lesss")
+	cleaned = cleaned.replace(/[\u4e00-\u9fff\u3400-\u4dbf]+/g, "");
+	cleaned = cleaned.replace(/([?!.,])[A-Z][a-z]{2,}\b/g, "$1");
 
- // === TAMBAHKAN INI: Ganti em dash (—), en dash (–), atau double hyphen (--) jadi koma atau spasi ===
- cleaned = cleaned.replace(/—|–|--/g, ", ");
+	// Ganti em dash (—), en dash (–), atau double hyphen (--) jadi koma atau spasi
+	cleaned = cleaned.replace(/—|–|--/g, ", ");
 
- // 1. Buka bungkus **bold** dan __underline__
- cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
- cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
+	// 1. Buka bungkus **bold**, __underline__, dan *italic* tunggal
+	cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
+	cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
+	cleaned = cleaned.replace(/\*([^*\n]+)\*/g, "$1");
 
- // 2. Hapus narasi roleplay *aksi*
- cleaned = cleaned.replace(
-  /(?<!\*)\*([a-zA-Z][^*\n]*?\s+[^*\n]*?[a-zA-Z])\*(?!\*)/g,
-  " ",
- );
-
- // 3. Hapus markdown heading (#), bullet points (- / • / *), atau angka list (1. / 2.) di awal baris
- cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*|\d+\.)[ \t]+/gm, "");
+	// 3. Hapus markdown heading (#), bullet points (- / • / *), atau angka list (1. / 2.) di awal baris
+	cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*|\d+\.)[ \t]+/gm, "");
 
  // 4. Ubah panah kaku khas bot rekap (→, ->, =>) menjadi koma
  cleaned = cleaned.replace(/\s*(?:→|->|=>)\s*/g, ", ");
@@ -730,11 +724,8 @@ export function sanitizeModelOutput(rawText: string): string {
 }
 
 /**
- * Memecah teks menjadi balon chat secara dinamis:
- * 1. Menghormati pemisah paragraf (\n\n) dari LLM setelah dibersihkan dari markdown/roleplay.
- * 2. Jika ada 1 balon yang terlalu panjang (> 380 karakter), otomatis memecahnya
- *    pada batas kalimat agar tidak terlihat seperti tembok teks.
- * 3. Semua balon dibatasi maksimum `maxBubbles`; kelebihannya digabung ke balon terakhir.
+ * Paragraf kosong dari LLM menentukan balon chat setelah pembersihan.
+ * Balon dibatasi maksimum `maxBubbles`; kelebihannya digabung ke balon terakhir.
  */
 export function splitDynamicBubbles(
  rawText: string,
@@ -743,59 +734,14 @@ export function splitDynamicBubbles(
  const sanitized = sanitizeModelOutput(rawText);
  if (!sanitized) return [];
 
- const cap = Math.max(1, Math.min(maxBubbles, ordinaryBubbleCap));
+ const cap = Math.max(1, maxBubbles);
  const paragraphs = sanitized
   .split(/\r?\n\s*\r?\n/)
   .map((part) => part.trim())
   .filter(Boolean);
  if (paragraphs.length === 0) return [];
 
- const first = paragraphs[0]!;
- // Paragraf pertama yang sangat pendek = reaksi spontan; biarkan jadi balon kedua.
- const leadingReaction =
-  paragraphs.length > 1 && first.length <= reactionLength;
- if (sanitized.length <= shortMessageMs && !leadingReaction)
-  return [humanizeBubble(sanitized)];
-
- const rest = leadingReaction ? paragraphs.slice(1) : paragraphs;
- const groups: string[] = [];
- let current = "";
- for (const paragraph of rest) {
-  const candidate =
-   current.length === 0 ? paragraph : `${current}\n\n${paragraph}`;
-  if (current.length > 0 && candidate.length > mergeCeiling) {
-   groups.push(current);
-   current = paragraph;
-  } else {
-   current = candidate;
-  }
- }
- if (current.length > 0) groups.push(current);
-
- const bubbles: string[] = [];
- if (leadingReaction) bubbles.push(humanizeBubble(first));
- for (const group of groups) {
-  if (group.length <= sentenceSplitCeiling || group.includes("\n")) {
-   bubbles.push(humanizeBubble(group));
-   continue;
-  }
-  const sentences = group.match(/[^.!?]+[.!?]*\s*/g) ?? [group];
-  let accumulated = "";
-  for (const sentence of sentences) {
-   if (
-    (accumulated + sentence).trim().length > sentenceSplitCeiling &&
-    accumulated.trim()
-   ) {
-    bubbles.push(humanizeBubble(accumulated));
-    accumulated = sentence;
-   } else {
-    accumulated += sentence;
-   }
-  }
-  if (accumulated.trim()) bubbles.push(humanizeBubble(accumulated));
- }
-
- return capBubbles(bubbles.filter(Boolean), cap);
+ return capBubbles(paragraphs.map(humanizeBubble).filter(Boolean), cap);
 }
 
 function normalizeProactiveText(text: string): string {

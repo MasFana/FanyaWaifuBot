@@ -3,6 +3,7 @@ import type { ContextBuilder } from "./context.js";
 import { applyOwnerSentiment } from "./mood.js";
 import { extractTraits, mergeTraits } from "./persona-state.js";
 import type { Channel, InboundEvent, InboundImage, LLMMessage, LLMResponse, ToolContext, WakeupEvent } from "./types.js";
+import { sanitizeModelOutput } from "../channels/telegram.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ToolRegistry } from "../tools/index.js";
@@ -97,25 +98,30 @@ export class Agent {
         messages = stripImages(messages);
         response = await retry(() => this.llm.complete({ ...request, messages }));
       }
+      const cleanedContent =
+        response.content !== null && response.toolCalls.length === 0
+          ? sanitizeModelOutput(response.content)
+          : response.content;
+
       const assistant: LLMMessage = response.toolCalls.length > 0
         ? { role: "assistant", content: response.content, toolCalls: response.toolCalls as [typeof response.toolCalls[number], ...typeof response.toolCalls] }
-        : { role: "assistant", content: response.content ?? "" };
+        : { role: "assistant", content: cleanedContent ?? "" };
       messages.push(assistant);
       this.memory.appendMessage(userId, {
         channel: "telegram",
         role: "assistant",
-        content: response.content,
+        content: cleanedContent,
         runId,
         isProactive: proactive,
         ...(response.toolCalls.length > 0 ? { toolCallsJson: JSON.stringify(response.toolCalls) } : {}),
       });
-        if (response.toolCalls.length === 0) {
-        if (proactive && response.content?.trim() === "[SKIP_PROACTIVE]") return { status: "skipped" };
-        if (response.content) {
+      if (response.toolCalls.length === 0) {
+        if (proactive && cleanedContent?.trim() === "[SKIP_PROACTIVE]") return { status: "skipped" };
+        if (cleanedContent) {
           let delivered = true;
-          if (trigger === "inbound") await this.channel.sendReply(userId, response.content);
-          else delivered = (await this.channel.sendProactive(userId, response.content, { triggerType: trigger })) !== false;
-          this.memory.setPersonaState(userId, mergeTraits(this.memory.getPersonaState(userId), extractTraits(response.content)));
+          if (trigger === "inbound") await this.channel.sendReply(userId, cleanedContent);
+          else delivered = (await this.channel.sendProactive(userId, cleanedContent, { triggerType: trigger })) !== false;
+          this.memory.setPersonaState(userId, mergeTraits(this.memory.getPersonaState(userId), extractTraits(cleanedContent)));
           return { status: "completed", delivered };
         }
         return { status: "completed", delivered: false };

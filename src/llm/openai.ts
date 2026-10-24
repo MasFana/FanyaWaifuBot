@@ -54,7 +54,10 @@ function mapRequest(request: LLMRequest, defaultModel: string): ChatCompletionCr
   return {
     model: request.model ?? defaultModel,
     messages: request.messages.map(mapMessage),
-    tools: request.tools.map((tool): ChatCompletionFunctionTool => ({ type: "function", function: tool })),
+    ...(request.tools.length > 0
+      ? { tools: request.tools.map((tool): ChatCompletionFunctionTool => ({ type: "function", function: tool })) }
+      : {}),
+    temperature: 0.75,
   };
 }
 

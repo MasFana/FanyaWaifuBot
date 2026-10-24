@@ -69,6 +69,7 @@ test("OpenAI provider maps messages, tools, and tool-call JSON", async () => {
       { role: "tool", content: "found coffee", tool_call_id: "old-call" },
     ],
     tools: [{ type: "function", function: { name: "memory_search", description: "Find memories", parameters: { type: "object", properties: { query: { type: "string" } } } } }],
+    temperature: 0.75,
   }]);
 });
 
@@ -98,7 +99,7 @@ test("OpenAI provider maps multimodal user content to text and image_url parts",
       { role: "user", content: [{ type: "text", text: "lihat" }, { type: "image_url", image_url: { url: "data:image/png;base64,ZZZ" } }] },
       { role: "user", content: "halo biasa" },
     ],
-    tools: [],
+    temperature: 0.75,
   }]);
 });
 
