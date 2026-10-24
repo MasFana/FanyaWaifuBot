@@ -66,7 +66,7 @@ export interface ToolDefinition {
 
 export interface Channel {
   sendReply(userId: string, text: string): Promise<void>;
-  sendProactive(userId: string, text: string): Promise<void>;
+  sendProactive(userId: string, text: string, options?: { triggerType?: WakeupEvent["triggerType"] }): Promise<void | boolean>;
   sendMedia?(userId: string, media: OutboundMedia): Promise<MediaDelivery>;
   flushPending?(userId?: string): Promise<void>;
 }

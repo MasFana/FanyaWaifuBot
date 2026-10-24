@@ -21,6 +21,9 @@ const silenceForCompanyMs = 60 * 60_000;
 const shareOnFinish = 0.3;
 const focusOnStart = 0.8;
 const initiativeThreshold = 0.6;
+/** Jendela "owner baru saja aktif"; di dalam ini Fanya tidak menaikkan drive inisiatif. */
+export const recentOwnerActivityMs = 30 * 60_000;
+const wantToShareCapAfterOwner = 0.25;
 
 /**
  * Memajukan dunia Fanya secara deterministik (tanpa LLM): memilih/menyelesaikan
@@ -30,14 +33,13 @@ export function tickLivingState(state: PersonaState, input: { now: number; lastU
   const { now, lastUserMessageAt, seed } = input;
   const elapsed = Math.max(0, now - state.updatedAt);
   const drives = { ...state.drives };
+  const recentlyActive = lastUserMessageAt !== null && now - lastUserMessageAt <= recentOwnerActivityMs;
   let activity: Activity | null = state.activity;
 
-  if (activity === null) {
+  if (activity === null || now >= activity.endsAt) {
+    if (activity !== null && !recentlyActive) drives.wantToShare = clamp(drives.wantToShare + shareOnFinish);
     activity = pickActivity(seed, now);
     drives.focus = clamp(focusOnStart);
-  } else if (now >= activity.endsAt) {
-    activity = null;
-    drives.wantToShare = clamp(drives.wantToShare + shareOnFinish);
   }
 
   if (lastUserMessageAt !== null && now - lastUserMessageAt > silenceForCompanyMs) {
@@ -49,7 +51,28 @@ export function tickLivingState(state: PersonaState, input: { now: number; lastU
   drives.focus = clamp(drives.focus - focusDecayPerMs * elapsed);
   drives.boundary = clamp(drives.boundary - boundaryDecayPerMs * elapsed);
 
+  if (recentlyActive) {
+    drives.wantCompany = 0;
+    drives.wantToShare = Math.min(drives.wantToShare, wantToShareCapAfterOwner);
+  }
+
+  // Pengaman anti-spam: drive yang sudah melewati threshold pada state sebelumnya
+  // dikuras ke 0 supaya tidak bisa memicu shouldInitiate dua tick berturut-turut.
+  if (elapsed > 0) {
+    if (state.drives.wantToShare >= initiativeThreshold) drives.wantToShare = 0;
+    if (state.drives.wantCompany >= initiativeThreshold) drives.wantCompany = 0;
+  }
+
   return { ...state, activity, drives, updatedAt: now };
+}
+
+/** Menguras drive inisiatif setelah proaktif dikirim agar tidak terpicu berulang. */
+export function consumeInitiative(state: PersonaState, now?: number): PersonaState {
+  return {
+    ...state,
+    drives: { ...state.drives, wantToShare: 0, wantCompany: 0 },
+    ...(now === undefined ? {} : { updatedAt: now }),
+  };
 }
 
 /** Merender LivingState jadi cue bahasa manusia untuk prompt (tanpa angka bila tak hingga). */

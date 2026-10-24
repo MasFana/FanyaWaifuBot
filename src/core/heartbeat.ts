@@ -4,7 +4,7 @@ import type { Agent } from "./agent.js";
 import type { Clock } from "./clock.js";
 import type { WakeupEvent } from "./types.js";
 import { OwnerQueue } from "./owner-queue.js";
-import { shouldInitiate, tickLivingState } from "./living-state.js";
+import { consumeInitiative, recentOwnerActivityMs, shouldInitiate, tickLivingState } from "./living-state.js";
 
 export class HeartbeatEngine {
   private running = false;
@@ -66,21 +66,31 @@ export class HeartbeatEngine {
     if (state.unansweredCount >= this.config.heartbeat.maxUnansweredProactive) return;
     const greeting = local.hour < 12 ? "morning" : local.hour >= 18 ? "night" : undefined;
     if (greeting && this.memory.claimProactiveEvent(userId, greeting, local.date)) {
-      await this.wake(userId, { userId, triggerType: "greeting", greeting }, () => this.memory.revertProactiveEvent(userId, greeting, local.date));
+      // Sapaan berjangkar waktu tidak ikut menghitung unanswered: ia sudah dibatasi 1x/hari.
+      await this.wake(userId, { userId, triggerType: "greeting", greeting }, {
+        revert: () => this.memory.revertProactiveEvent(userId, greeting, local.date),
+        countUnanswered: false,
+      });
       return;
     }
-    const persona = tickLivingState(this.memory.getPersonaState(userId), { now: this.clock.now(), lastUserMessageAt: state.lastUserMessageAt, seed: userId });
-    this.memory.setPersonaState(userId, persona);
-    if (shouldInitiate(persona) !== null) await this.wake(userId, { userId, triggerType: "spontaneous" });
+    const now = this.clock.now();
+    const persisted = this.memory.getPersonaState(userId);
+    const initiative = shouldInitiate(persisted);
+    const persona = tickLivingState(persisted, { now, lastUserMessageAt: state.lastUserMessageAt, seed: userId });
+    const ownerRecentlyActive = state.lastUserMessageAt !== null && now - state.lastUserMessageAt <= recentOwnerActivityMs;
+    // Satu spontaneous_care yang belum dibalas menahan inisiatif berikutnya sampai owner membalas.
+    const canInitiate = initiative !== null && state.unansweredCount < 1 && !ownerRecentlyActive;
+    this.memory.setPersonaState(userId, canInitiate ? consumeInitiative(persona, now) : persona);
+    if (canInitiate) await this.wake(userId, { userId, triggerType: "spontaneous" });
   }
 
-  private async wake(userId: string, wakeup: WakeupEvent, revert?: () => void): Promise<void> {
+  private async wake(userId: string, wakeup: WakeupEvent, options: { revert?: () => void; countUnanswered?: boolean } = {}): Promise<void> {
     try {
       const outcome = await this.queue.enqueue(userId, () => this.agent.runWakeup(wakeup));
-      if (outcome.status === "skipped" || outcome.delivered !== true) revert?.();
-      if (outcome.delivered === true) this.memory.recordProactiveSend(userId);
+      if (outcome.status === "skipped" || outcome.delivered !== true) options.revert?.();
+      if (outcome.delivered === true) this.memory.recordProactiveSend(userId, { countUnanswered: options.countUnanswered ?? true });
     } catch {
-      revert?.();
+      options.revert?.();
     }
   }
 }

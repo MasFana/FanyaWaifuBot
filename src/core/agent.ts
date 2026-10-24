@@ -43,14 +43,19 @@ export class Agent {
   async runWakeup(wakeup: WakeupEvent): Promise<AgentOutcome> {
     const commitment = wakeup.commitmentId ? `; commitment: ${wakeup.commitmentId}` : "";
     const greeting = wakeup.triggerType === "greeting" && wakeup.greeting !== undefined ? `; ${greetingInstruction(wakeup.greeting)}` : "";
-    return this.run(wakeup.userId, wakeup.triggerType, { wakeup: `Trigger: ${wakeup.triggerType}${commitment}${greeting}` });
+    const spontaneous = wakeup.triggerType === "spontaneous" ? `; ${spontaneousInstruction(this.clock.now(), this.ownerTimeZone(wakeup.userId))}` : "";
+    return this.run(wakeup.userId, wakeup.triggerType, { wakeup: `Trigger: ${wakeup.triggerType}${commitment}${greeting}${spontaneous}` });
+  }
+
+  private ownerTimeZone(userId: string): string {
+    try { return this.memory.exportOwner(userId).owner.timezone; } catch { return "Asia/Jakarta"; }
   }
 
   private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string; excludeMessageIds?: readonly string[] }): Promise<AgentOutcome> {
     const runId = this.memory.createAgentRun(userId, trigger, this.model);
     try {
       const messages = await this.context.build({ userId, ...input });
-      const outcome = await this.loop(runId, userId, trigger !== "inbound", messages);
+      const outcome = await this.loop(runId, userId, trigger, messages);
       this.memory.finishAgentRun(runId, outcome.status, outcome.error);
       return outcome;
     } catch (error) {
@@ -60,7 +65,8 @@ export class Agent {
     }
   }
 
-  private async loop(runId: string, userId: string, proactive: boolean, messages: LLMMessage[]): Promise<AgentOutcome> {
+  private async loop(runId: string, userId: string, trigger: WakeupEvent["triggerType"] | "inbound", messages: LLMMessage[]): Promise<AgentOutcome> {
+    const proactive = trigger !== "inbound";
     for (let cycle = 0; cycle < maxToolCycles; cycle += 1) {
       const response = await this.llm.complete({
         messages,
@@ -79,13 +85,16 @@ export class Agent {
         isProactive: proactive,
         ...(response.toolCalls.length > 0 ? { toolCallsJson: JSON.stringify(response.toolCalls) } : {}),
       });
-      if (response.toolCalls.length === 0) {
+        if (response.toolCalls.length === 0) {
         if (proactive && response.content?.trim() === "[SKIP_PROACTIVE]") return { status: "skipped" };
         if (response.content) {
-          await (proactive ? this.channel.sendProactive(userId, response.content) : this.channel.sendReply(userId, response.content));
+          let delivered = true;
+          if (trigger === "inbound") await this.channel.sendReply(userId, response.content);
+          else delivered = (await this.channel.sendProactive(userId, response.content, { triggerType: trigger })) !== false;
           this.memory.setPersonaState(userId, mergeTraits(this.memory.getPersonaState(userId), extractTraits(response.content)));
+          return { status: "completed", delivered };
         }
-        return { status: "completed", delivered: response.content !== null && response.content.trim().length > 0 };
+        return { status: "completed", delivered: false };
       }
       for (const call of response.toolCalls) {
         const started = this.clock.now();
@@ -108,4 +117,9 @@ function greetingInstruction(slot: "morning" | "night"): string {
   return slot === "morning"
     ? "ini sapaan pagi. Sapa dia dengan sapaan pagi yang hangat dan masih ngantuk."
     : "ini sapaan malam. Sapa dia dengan sapaan malam, tanya kabarnya dan ajak dia istirahat atau tidur.";
+}
+
+function spontaneousInstruction(now: number, timeZone: string): string {
+  const local = new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short", timeZone }).format(now);
+  return `waktu lokal saat ini persis ${local}. Sapa singkat sesuai jam ini (jangan menyapa pagi kalau sekarang masih malam). Kalau di chat terakhir owner baru saja pamit tidur di malam yang sama, atau topik sapaan ini sudah kamu tanyakan di pesan terakhirmu, balas HANYA dengan teks persis: [SKIP_PROACTIVE].`;
 }

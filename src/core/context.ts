@@ -43,7 +43,7 @@ export class ContextBuilder {
     this.memory.setPersonaState(input.userId, living);
     const agenda = exported.commitments.filter((item) => item.status === "pending" && item.eventAt !== null && item.eventAt >= now - 86_400_000 && item.eventAt <= now + 3 * 86_400_000);
     const dynamic = [
-      `Waktu sekarang: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short", timeZone: exported.owner.timezone }).format(now)} (Tanggal: ${new Intl.DateTimeFormat("sv-SE", { timeZone: exported.owner.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)})`,
+      `Waktu sekarang: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeStyle: "short", timeZone: exported.owner.timezone }).format(now)} (zona ${exported.owner.timezone}; tanggal ISO ${new Intl.DateTimeFormat("sv-SE", { timeZone: exported.owner.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now)}). Acuan tanggal: sapaan pagi/siang/sore/malam ikut jam lokal ini; kalau owner minta jam yang belum lewat hari ini (mis. "nanti jam 3"), jadwalkan HARI INI, bukan besok.`,
       `Jeda sejak chat terakhir owner: ${state.lastUserMessageAt === null ? "Belum ada" : formatElapsed(now - state.lastUserMessageAt)}`,
       `Keadaan sekarang: ${renderStateCue(living, mood)}`,
       `Fakta aktif:\n${exported.facts.map((fact) => `- ${fact.content}`).join("\n") || "- Belum ada"}`,

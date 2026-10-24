@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultPersonaState, parsePersonaState } from "../src/core/persona-state.js";
-import { activityPool, decideReply, renderStateCue, shouldInitiate, tickLivingState } from "../src/core/living-state.js";
+import { activityPool, consumeInitiative, decideReply, renderStateCue, shouldInitiate, tickLivingState } from "../src/core/living-state.js";
 import { applyOwnerSentiment, computeMood } from "../src/core/mood.js";
 
 const tz = "Asia/Jakarta";
@@ -33,13 +33,53 @@ test("tick picks a deterministic activity when idle", () => {
   assert.deepEqual(first.activity, second.activity);
 });
 
-test("activity ending clears it and raises wantToShare", () => {
+test("activity ending immediately picks a new activity and raises wantToShare when owner is idle", () => {
   const ended = { ...defaultPersonaState, updatedAt: now - 1_000, activity: { name: "baca novel bab terakhir", endsAt: now - 1 } };
+
+  const next = tickLivingState(ended, { now, lastUserMessageAt: now - 10 * 3_600_000, seed: "owner" });
+
+  assert.ok(next.activity);
+  assert.notEqual(next.activity.endsAt, ended.activity.endsAt);
+  assert.ok(next.drives.wantToShare > ended.drives.wantToShare);
+});
+
+test("finishing an activity while owner just chatted does not raise wantToShare", () => {
+  const ended = { ...defaultPersonaState, updatedAt: now - 1_000, activity: { name: "baca novel bab terakhir", endsAt: now - 1 }, drives: { wantCompany: 0, wantToShare: 0, focus: 0.4, boundary: 0 } };
 
   const next = tickLivingState(ended, { now, lastUserMessageAt: now, seed: "owner" });
 
-  assert.equal(next.activity, null);
-  assert.ok(next.drives.wantToShare > ended.drives.wantToShare);
+  assert.ok(next.activity);
+  assert.ok(next.drives.wantToShare <= 0.25);
+});
+
+test("recent owner activity zeroes wantCompany and caps wantToShare", () => {
+  const base = { ...defaultPersonaState, updatedAt: now - 60_000, drives: { wantCompany: 0.3, wantToShare: 0.5, focus: 0.2, boundary: 0.1 } };
+
+  const next = tickLivingState(base, { now, lastUserMessageAt: now - 60_000, seed: "owner" });
+
+  assert.equal(next.drives.wantCompany, 0);
+  assert.ok(next.drives.wantToShare <= 0.25);
+});
+
+test("tick drains drives already above threshold so initiative cannot fire twice", () => {
+  const base = { ...defaultPersonaState, updatedAt: now - 60_000, drives: { wantCompany: 0.7, wantToShare: 0.9, focus: 0, boundary: 0 } };
+
+  const next = tickLivingState(base, { now, lastUserMessageAt: now - 10 * 3_600_000, seed: "owner" });
+
+  assert.equal(next.drives.wantToShare, 0);
+  assert.equal(next.drives.wantCompany, 0);
+});
+
+test("consumeInitiative zeroes share and company drives only", () => {
+  const state = { ...defaultPersonaState, drives: { wantCompany: 0.9, wantToShare: 0.8, focus: 0.4, boundary: 0.2 } };
+
+  const consumed = consumeInitiative(state, now);
+
+  assert.equal(consumed.drives.wantToShare, 0);
+  assert.equal(consumed.drives.wantCompany, 0);
+  assert.equal(consumed.drives.focus, 0.4);
+  assert.equal(consumed.drives.boundary, 0.2);
+  assert.equal(consumed.updatedAt, now);
 });
 
 test("long silence raises wantCompany and clamps to one", () => {

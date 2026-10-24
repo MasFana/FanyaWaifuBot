@@ -1,7 +1,7 @@
 import { Bot, InputFile } from "grammy";
 import type { AppConfig } from "../config.js";
 import type { Clock } from "../core/clock.js";
-import type { InboundEvent, MediaDelivery, OutboundMedia } from "../core/types.js";
+import type { InboundEvent, MediaDelivery, OutboundMedia, WakeupEvent } from "../core/types.js";
 import type { ForgetResult, MemoryService } from "../memory/service.js";
 import { OwnerQueue } from "../core/owner-queue.js";
 import { decideReply } from "../core/living-state.js";
@@ -9,6 +9,20 @@ import { decideReply } from "../core/living-state.js";
 const channelName = "telegram";
 const quietTime = /^([01]\d|2[0-3]):[0-5]\d$/;
 const skipProactiveToken = "[SKIP_PROACTIVE]";
+const sleepPhrase = /(\bmau tidur|\bpengen tidur|\bbobo dulu|\bmau bobo|\btidur dulu)/i;
+const sleepDurationMs = 7 * 3_600_000;
+const userActiveGraceMs = 2 * 3_600_000;
+const proactiveCooldownMs = 3 * 3_600_000;
+const recentProactiveLimit = 5;
+const shortMessageMs = 260;
+const reactionLength = 45;
+const mergeCeiling = 280;
+const sentenceSplitCeiling = 380;
+const ordinaryBubbleCap = 2;
+
+export interface SendProactiveOptions {
+  triggerType?: WakeupEvent["triggerType"];
+}
 
 interface PendingBurst {
   texts: string[];
@@ -95,6 +109,10 @@ export class TelegramChannel {
   private agent: TelegramAgent | undefined;
   private owner: { externalId: string; id: string } | undefined;
   private readonly pending = new Map<string, PendingBurst>();
+  private lastUserActivityAt: number | null = null;
+  private lastProactiveSentAt: number | null = null;
+  private sleepUntil: number | null = null;
+  private readonly recentProactiveTexts: string[] = [];
 
   constructor(
     private readonly config: AppConfig,
@@ -148,6 +166,8 @@ export class TelegramChannel {
     };
     if (!this.memory.recordInbound(channelName, event)) return;
     this.memory.resetUnansweredProactiveCount(owner.id);
+    this.lastUserActivityAt = event.receivedAt;
+    this.sleepUntil = sleepPhrase.test(text) ? event.receivedAt + sleepDurationMs : null;
 
     if (text.trimStart().startsWith("/")) {
       await this.flushPending(owner.id, { force: true });
@@ -223,9 +243,28 @@ export class TelegramChannel {
     await this.deliver(userId, text);
   }
 
-  async sendProactive(userId: string, text: string): Promise<void> {
-    if (text.trim().includes(skipProactiveToken)) return;
+  /** Mengembalikan false bila rem proaktif menahan pengiriman, true bila benar-benar terkirim. */
+  async sendProactive(userId: string, text: string, options: SendProactiveOptions = {}): Promise<boolean> {
+    if (text.trim().includes(skipProactiveToken)) return false;
+    const spontaneous = (options.triggerType ?? "spontaneous") === "spontaneous";
+    const now = this.clock.now();
+    if (spontaneous && this.holdsSpontaneous(text, now)) return false;
     await this.deliver(userId, text);
+    if (spontaneous) {
+      this.lastProactiveSentAt = this.clock.now();
+      this.recentProactiveTexts.push(normalizeProactiveText(text));
+      while (this.recentProactiveTexts.length > recentProactiveLimit) this.recentProactiveTexts.shift();
+    }
+    return true;
+  }
+
+  /** Rem proaktif: tidur, owner baru aktif, jeda antar-pesan, atau teks yang berulang. */
+  private holdsSpontaneous(text: string, now: number): boolean {
+    if (this.sleepUntil !== null && now < this.sleepUntil) return true;
+    if (this.lastUserActivityAt !== null && now - this.lastUserActivityAt < userActiveGraceMs) return true;
+    if (this.lastProactiveSentAt !== null && now - this.lastProactiveSentAt < proactiveCooldownMs) return true;
+    const normalized = normalizeProactiveText(text);
+    return normalized.length > 0 && this.recentProactiveTexts.some((previous) => isSimilarProactiveText(previous, normalized));
   }
 
   async sendMedia(userId: string, media: OutboundMedia): Promise<MediaDelivery> {
@@ -432,6 +471,9 @@ export class TelegramChannel {
 export function sanitizeModelOutput(rawText: string): string {
   let cleaned = rawText;
 
+  // 0. Hapus kebocoran aksara Mandarin/Hanzi/CJK.
+  cleaned = cleaned.replace(/[\u4e00-\u9fff\u3400-\u4dbf]+/g, "");
+
   // 1. Buka bungkus **bold** dan __underline/bold__ (pertahankan teks di dalamnya)
   cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
   cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
@@ -460,36 +502,68 @@ export function splitDynamicBubbles(rawText: string, maxBubbles: number): string
   const sanitized = sanitizeModelOutput(rawText);
   if (!sanitized) return [];
 
+  const cap = Math.max(1, Math.min(maxBubbles, ordinaryBubbleCap));
   const paragraphs = sanitized
     .split(/\r?\n\s*\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
+  if (paragraphs.length === 0) return [];
 
-  const bubbles: string[] = [];
+  const first = paragraphs[0]!;
+  // Paragraf pertama yang sangat pendek = reaksi spontan; biarkan jadi balon kedua.
+  const leadingReaction = paragraphs.length > 1 && first.length <= reactionLength;
+  if (sanitized.length <= shortMessageMs && !leadingReaction) return [humanizeBubble(sanitized)];
 
-  for (const paragraph of paragraphs) {
-    if (paragraph.length <= 380 || paragraph.includes("\n")) {
-      bubbles.push(humanizeBubble(paragraph));
-      continue;
-    }
-
-    const sentences = paragraph.match(/[^.!?]+[.!?]*\s*/g) ?? [paragraph];
-    let current = "";
-
-    for (const sentence of sentences) {
-      if ((current + sentence).trim().length > 320 && current.trim()) {
-        bubbles.push(humanizeBubble(current));
-        current = sentence;
-      } else {
-        current += sentence;
-      }
-    }
-    if (current.trim()) {
-      bubbles.push(humanizeBubble(current));
+  const rest = leadingReaction ? paragraphs.slice(1) : paragraphs;
+  const groups: string[] = [];
+  let current = "";
+  for (const paragraph of rest) {
+    const candidate = current.length === 0 ? paragraph : `${current}\n\n${paragraph}`;
+    if (current.length > 0 && candidate.length > mergeCeiling) {
+      groups.push(current);
+      current = paragraph;
+    } else {
+      current = candidate;
     }
   }
+  if (current.length > 0) groups.push(current);
 
-  return capBubbles(bubbles.filter(Boolean), maxBubbles);
+  const bubbles: string[] = [];
+  if (leadingReaction) bubbles.push(humanizeBubble(first));
+  for (const group of groups) {
+    if (group.length <= sentenceSplitCeiling || group.includes("\n")) {
+      bubbles.push(humanizeBubble(group));
+      continue;
+    }
+    const sentences = group.match(/[^.!?]+[.!?]*\s*/g) ?? [group];
+    let accumulated = "";
+    for (const sentence of sentences) {
+      if ((accumulated + sentence).trim().length > sentenceSplitCeiling && accumulated.trim()) {
+        bubbles.push(humanizeBubble(accumulated));
+        accumulated = sentence;
+      } else {
+        accumulated += sentence;
+      }
+    }
+    if (accumulated.trim()) bubbles.push(humanizeBubble(accumulated));
+  }
+
+  return capBubbles(bubbles.filter(Boolean), cap);
+}
+
+function normalizeProactiveText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSimilarProactiveText(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 12 && longer.includes(shorter);
 }
 
 function capBubbles(bubbles: string[], maxBubbles: number): string[] {

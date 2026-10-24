@@ -161,6 +161,36 @@ test("greeting wakeup tells the model the correct time slot", async () => {
   assert.doesNotMatch(turn, /pagi/u);
 });
 
+test("agent marks a channel-dropped proactive as not delivered", async () => {
+  const database = openDatabase(":memory:");
+  databases.push(database);
+  const clock = new FrozenClock(now);
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const channel: Channel = { sendReply: async () => {}, sendProactive: async () => false };
+  const fake = new FakeLLMProvider();
+  const context = new ContextBuilder(memory, clock, "Persona", "Rules", "Tools");
+  const agent = new Agent(fake, memory, new ToolRegistry([]), channel, context, clock, "test-model");
+  fake.enqueue({ content: "malem sayang", toolCalls: [] });
+
+  const outcome = await agent.runWakeup({ userId: owner.id, triggerType: "spontaneous" });
+
+  assert.equal(outcome.delivered, false);
+});
+
+test("spontaneous wakeup prompt includes the current local time and skip instruction", async () => {
+  const { agent, fake, owner } = setup();
+  fake.enqueue({ content: "malam", toolCalls: [] });
+
+  await agent.runWakeup({ userId: owner.id, triggerType: "spontaneous" });
+
+  const turn = fake.getRequests()[0]?.messages.at(-1)?.content ?? "";
+  assert.match(turn, /waktu lokal saat ini/i);
+  assert.match(turn, /\[SKIP_PROACTIVE\]/);
+});
+
 test("context includes a persisted inbound message exactly once", async () => {
   const database = openDatabase(":memory:");
   databases.push(database);

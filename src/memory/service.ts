@@ -260,7 +260,11 @@ export class MemoryService {
     this.database.prepare("DELETE FROM proactive_events WHERE user_id = ? AND kind = ? AND local_date = ?").run(userId, kind, localDate);
   }
 
-  recordProactiveSend(userId: string): void {
+  recordProactiveSend(userId: string, options: { countUnanswered?: boolean } = {}): void {
+    if (options.countUnanswered === false) {
+      this.database.prepare("UPDATE users SET last_proactive_at = ? WHERE id = ?").run(this.clock.now(), userId);
+      return;
+    }
     this.database.prepare("UPDATE users SET last_proactive_at = ?, unanswered_proactive_count = unanswered_proactive_count + 1 WHERE id = ?").run(this.clock.now(), userId);
   }
 
