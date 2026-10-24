@@ -133,7 +133,7 @@ test("heartbeat blocks drive initiative during quiet hours", async () => {
 
   await heartbeat.tick();
 
-  assert.equal(agent.wakeups.filter((wakeup) => wakeup.triggerType === "spontaneous").length, 0);
+  assert.equal(agent.wakeups.length, 0);
 });
 
 test("heartbeat blocks drive initiative after maximum unanswered proactive messages", async () => {
