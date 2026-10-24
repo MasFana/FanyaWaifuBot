@@ -13,15 +13,16 @@ afterEach(() => { for (const database of databases.splice(0)) database.close(); 
 
 class FakeBot implements TelegramBot {
   readonly messages: string[] = [];
+  readonly actions: Array<{ chatId: string; action: "typing" }> = [];
   async sendMessage(_chatId: string, text: string): Promise<void> { this.messages.push(text); }
-  async sendChatAction(): Promise<void> {}
-  async sendDocument(): Promise<void> {}
-  async sendMedia(): Promise<void> {}
-  async start(): Promise<void> {}
-  stop(): void {}
+  async sendChatAction(chatId: string, action: "typing"): Promise<void> { this.actions.push({ chatId, action }); }
+  async sendDocument(): Promise<void> { }
+  async sendMedia(): Promise<void> { }
+  async start(): Promise<void> { }
+  stop(): void { }
 }
 
-function setup(debounceMs: number, delay: Delay = async () => {}) {
+function setup(debounceMs: number, delay: Delay = async () => { }) {
   const database = openDatabase(":memory:");
   databases.push(database);
   const clock = new FrozenClock(1_729_648_000_000);
@@ -87,9 +88,9 @@ test("command flushes the pending burst before running itself", async () => {
   assert.ok(turns.some((turn) => turn.startsWith("[SYSTEM COMMAND")), "command then ran");
 });
 
-test("high focus defers the reply by deferExtraMs before running", async () => {
+test("high focus defers while showing typing for deferExtraMs", async () => {
   const delays: number[] = [];
-  const { channel, memory, turns } = setup(10_000, async (milliseconds) => { delays.push(milliseconds); });
+  const { channel, memory, bot, turns } = setup(10_000, async (milliseconds) => { delays.push(milliseconds); });
   memory.setPersonaState("123", {
     ...defaultPersonaState,
     activity: { name: "baca novel bab terakhir", endsAt: 9_999_999_999_000 },
@@ -99,9 +100,10 @@ test("high focus defers the reply by deferExtraMs before running", async () => {
   await channel.receive({ id: "m1", fromId: "123", text: "halo" });
   await channel.flushPending("123");
 
-  assert.deepEqual(delays, [60_000]);
+  assert.deepEqual(delays, Array(15).fill(4_000));
+  assert.deepEqual(bot.actions, Array(15).fill({ chatId: "123", action: "typing" }));
   assert.equal(turns.length, 1);
-});
+})
 
 test("low focus replies without deferring", async () => {
   const delays: number[] = [];
