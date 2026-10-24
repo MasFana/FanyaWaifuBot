@@ -642,7 +642,7 @@ export class TelegramChannel {
 
       // Jeda mikir sejenak antar balon chat agar terasa seperti manusia yang lanjut ngetik
       if (index > 0) {
-        await this.delay(350 + Math.floor(Math.random() * 550));
+        await this.delay(100 + Math.floor(Math.random() * 200));
       }
 
       await this.bot.sendChatAction(chatId, "typing");
@@ -801,10 +801,10 @@ function humanizeBubble(raw: string): string {
 }
 
 function computeDynamicTypingDelay(bubble: string): number {
-  const charSpeedMs = 32 + Math.floor(Math.random() * 14);
+  const charSpeedMs = 12 + Math.floor(Math.random() * 8);
   const calculated = bubble.length * charSpeedMs;
-  const jitter = Math.floor(Math.random() * 450);
-  return Math.min(Math.max(calculated + jitter, 900), 3_800);
+  const jitter = Math.floor(Math.random() * 180);
+  return Math.min(Math.max(calculated + jitter, 300), 1_400);
 }
 
 function buildForgetPrompt(topic: string, result: ForgetResult): string {
