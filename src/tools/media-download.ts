@@ -5,6 +5,8 @@ import type { OutboundMedia, ToolDefinition } from "../core/types.js";
 const baseUrl = "https://backend1.tioo.eu.org";
 const clientVersion = "6.4.0";
 
+const mediaFailureMessage = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa medianya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi medianya tentang apa.";
+
 const endpoints: Record<Platform, string> = {
   youtube: "youtube", tiktok: "ttdl", instagram: "igdl", facebook: "fbdown",
   twitter: "twitter", spotify: "spotify", soundcloud: "soundcloud",
@@ -190,15 +192,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 async function fetchMedia(platform: Platform, url: string): Promise<unknown> {
-  const response = await fetch(`${baseUrl}/${endpoints[platform]}?url=${encodeURIComponent(url)}`, {
-    headers: {
-      "content-type": "application/json",
-      "user-agent": `btch/${clientVersion}`,
-      "x-client-version": clientVersion,
-    },
-  });
-  if (!response.ok) throw new Error(`Downloader API responded ${response.status}`);
-  return response.json();
+  try {
+    const response = await fetch(`${baseUrl}/${endpoints[platform]}?url=${encodeURIComponent(url)}`, {
+      headers: {
+        "content-type": "application/json",
+        "user-agent": `btch/${clientVersion}`,
+        "x-client-version": clientVersion,
+      },
+    });
+    if (!response.ok) throw new Error(mediaFailureMessage);
+    return await response.json();
+  } catch {
+    throw new Error(mediaFailureMessage);
+  }
 }
 
 function normalizeLink(link: string): string {
@@ -225,13 +231,10 @@ const tool: ToolDefinition = {
   async execute(arguments_, context) {
     const parsed = z.object({ url: z.string(), audio: z.boolean().optional() }).parse(arguments_);
     const platform = detectPlatform(parsed.url);
-    if (platform === undefined) throw new Error("Unsupported link");
+    if (platform === undefined) throw new Error("Tautan itu tidak dikenali sebagai sumber media yang bisa kuunduh. Beri tahu pacarmu secara natural, tanpa istilah teknis, bahwa kamu nggak bisa mengunduh dari tautan itu.");
     const payload = await fetchMedia(platform, normalizeLink(parsed.url));
     const items = extractMedia(platform, payload, parsed.audio ?? false);
-    if (items.length === 0) {
-      const reason = asRecord(payload)["error"];
-      throw new Error(typeof reason === "string" && reason.length > 0 ? `Source error: ${reason}` : "No downloadable media found for that link");
-    }
+    if (items.length === 0) throw new Error(mediaFailureMessage);
     let sent = 0;
     const links: string[] = [];
     for (const item of items) {

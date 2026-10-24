@@ -1,6 +1,6 @@
 import OpenAI from "openai";
-import type { ChatCompletion, ChatCompletionAssistantMessageParam, ChatCompletionCreateParamsNonStreaming, ChatCompletionFunctionTool, ChatCompletionMessageParam, ChatCompletionSystemMessageParam, ChatCompletionToolMessageParam, ChatCompletionUserMessageParam } from "openai/resources/chat/completions/completions";
-import type { LLMMessage, LLMRequest, LLMResponse, ToolCall } from "../core/types.js";
+import type { ChatCompletion, ChatCompletionAssistantMessageParam, ChatCompletionContentPart, ChatCompletionCreateParamsNonStreaming, ChatCompletionFunctionTool, ChatCompletionMessageParam, ChatCompletionSystemMessageParam, ChatCompletionToolMessageParam, ChatCompletionUserMessageParam } from "openai/resources/chat/completions/completions";
+import type { ContentPart, LLMMessage, LLMRequest, LLMResponse, ToolCall } from "../core/types.js";
 import type { LLMProvider } from "./provider.js";
 
 export interface ChatCompletionClient {
@@ -59,7 +59,7 @@ function mapRequest(request: LLMRequest, defaultModel: string): ChatCompletionCr
 function mapMessage(message: LLMMessage): ChatCompletionMessageParam {
   switch (message.role) {
     case "system": return { role: "system", content: message.content } satisfies ChatCompletionSystemMessageParam;
-    case "user": return { role: "user", content: message.content } satisfies ChatCompletionUserMessageParam;
+    case "user": return { role: "user", content: typeof message.content === "string" ? message.content : message.content.map(mapContentPart) } satisfies ChatCompletionUserMessageParam;
     case "tool": return { role: "tool", content: message.content, tool_call_id: message.toolCallId } satisfies ChatCompletionToolMessageParam;
     case "assistant": {
       const toolCalls = message.toolCalls?.map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: JSON.stringify(call.arguments) } }));
@@ -68,6 +68,12 @@ function mapMessage(message: LLMMessage): ChatCompletionMessageParam {
         : ({ role: "assistant", content: message.content, tool_calls: toolCalls } satisfies ChatCompletionAssistantMessageParam);
     }
   }
+}
+
+function mapContentPart(part: ContentPart): ChatCompletionContentPart {
+  return part.type === "text"
+    ? { type: "text", text: part.text }
+    : { type: "image_url", image_url: { url: part.dataUrl } };
 }
 
 function mapToolCall(call: { id: string; function: { name: string; arguments: string } }): ToolCall {

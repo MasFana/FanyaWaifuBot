@@ -3,7 +3,7 @@ import { computeMood } from "./mood.js";
 import { renderStateCue, tickLivingState } from "./living-state.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { LLMMessage } from "./types.js";
+import type { InboundImage, LLMMessage } from "./types.js";
 import type { MemoryService } from "../memory/service.js";
 
 export interface ContextInput {
@@ -12,6 +12,7 @@ export interface ContextInput {
   wakeup?: string;
   excludeMessageId?: string;
   excludeMessageIds?: readonly string[];
+  images?: readonly InboundImage[];
 }
 
 export class ContextBuilder {
@@ -53,7 +54,10 @@ export class ContextBuilder {
     ].join("\n\n");
     const history = pairedHistory(priorMessages(exported.messages, excludedIds(input)).slice(-20));
     const turn = input.inboundText ?? `[SYSTEM WAKEUP]\n${input.wakeup ?? "Mulai percakapan proaktif sesuai pemicu."}`;
-    return [{ role: "system", content: `${this.persona}\n\n${this.guardrails}\n\n${this.toolGuidance}\n\n${dynamic}` }, ...history, { role: "user", content: turn }];
+    const turnParts = input.images?.length
+      ? [{ type: "text" as const, text: turn }, ...input.images.map((img) => ({ type: "image_url" as const, dataUrl: img.dataUrl }))]
+      : turn;
+    return [{ role: "system", content: `${this.persona}\n\n${this.guardrails}\n\n${this.toolGuidance}\n\n${dynamic}` }, ...history, { role: "user", content: turnParts }];
   }
 }
 
