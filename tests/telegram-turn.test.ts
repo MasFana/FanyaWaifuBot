@@ -4,7 +4,7 @@ import type Database from "better-sqlite3";
 import { FrozenClock } from "../src/core/clock.js";
 import { openDatabase, migrate } from "../src/db/index.js";
 import { MemoryService } from "../src/memory/service.js";
-import { TelegramChannel, type Delay, type TelegramBot } from "../src/channels/telegram.js";
+import { TelegramChannel, computeBurstDebounceMs, sanitizeModelOutput, splitDynamicBubbles, type Delay, type TelegramBot } from "../src/channels/telegram.js";
 import { defaultPersonaState } from "../src/core/persona-state.js";
 import { createTestConfig } from "./helpers.js";
 
@@ -112,4 +112,34 @@ test("low focus replies without deferring", async () => {
 
   assert.deepEqual(delays, []);
   assert.equal(turns.length, 1);
+});
+
+test("computeBurstDebounceMs extends the window for short lead bursts", () => {
+  assert.equal(computeBurstDebounceMs(8, 2000), 4500);
+  assert.equal(computeBurstDebounceMs(8, 8000), 8000);
+  assert.equal(computeBurstDebounceMs(40, 2000), 2000);
+});
+
+test("sanitizeModelOutput collapses a menu of question lines into one flowing message", () => {
+  const cleaned = sanitizeModelOutput(
+    "lo-fi chill buat nemenin baca?\nanime ost?\ncity pop japan 80s? kasih tau aja",
+  );
+  assert.ok(!cleaned.includes("\n"), "menu must not keep internal newlines");
+  assert.equal(
+    cleaned,
+    "lo-fi chill buat nemenin baca? anime ost? city pop japan 80s? kasih tau aja",
+  );
+});
+
+test("splitDynamicBubbles keeps a collapsed question menu as a single bubble", () => {
+  const bubbles = splitDynamicBubbles(
+    "lo-fi chill buat nemenin baca?\nanime ost?\ncity pop japan 80s? kasih tau aja",
+    3,
+  );
+  assert.equal(bubbles.length, 1);
+});
+
+test("splitDynamicBubbles still splits a normal two-paragraph reply", () => {
+  const bubbles = splitDynamicBubbles("Satu\n\nDua", 3);
+  assert.deepEqual(bubbles, ["Satu", "Dua"]);
 });

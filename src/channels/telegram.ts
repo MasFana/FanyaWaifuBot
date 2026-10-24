@@ -19,6 +19,12 @@ const reactionLength = 45;
 const mergeCeiling = 280;
 const sentenceSplitCeiling = 380;
 const ordinaryBubbleCap = 2;
+const shortBurstLength = 20;
+const shortBurstDebounceMs = 4500;
+
+export function computeBurstDebounceMs(joinedLength: number, configuredMs: number): number {
+  return joinedLength < shortBurstLength ? Math.max(configuredMs, shortBurstDebounceMs) : configuredMs;
+}
 
 export interface SendProactiveOptions {
   triggerType?: WakeupEvent["triggerType"];
@@ -236,7 +242,8 @@ export class TelegramChannel {
     const burst = this.pending.get(ownerId);
     if (burst === undefined) return;
     if (burst.timer) clearTimeout(burst.timer);
-    burst.timer = setTimeout(() => { void this.flushPending(ownerId); }, this.config.replies.debounceMs);
+    const delay = computeBurstDebounceMs(burst.texts.join("\n").length, this.config.replies.debounceMs);
+    burst.timer = setTimeout(() => { void this.flushPending(ownerId); }, delay);
   }
 
   async sendReply(userId: string, text: string): Promise<void> {
@@ -487,6 +494,15 @@ export function sanitizeModelOutput(rawText: string): string {
   // 4. Rapikan spasi ganda akibat penghapusan aksi roleplay
   cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  // 5. Runtuhkan "menu pertanyaan" (>=2 baris berakhiran "?") jadi satu pesan mengalir
+  const questionLines = cleaned.split("\n").filter((line) => line.trim().length > 0);
+  if (
+    questionLines.length >= 2 &&
+    questionLines.filter((line) => line.trim().endsWith("?")).length >= 2
+  ) {
+    cleaned = questionLines.map((line) => line.trim()).join(" ");
+  }
 
   return cleaned.trim();
 }
