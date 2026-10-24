@@ -40,6 +40,14 @@ export function toDataUrl(buffer: Buffer, mimeType: string): string {
   return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
+export function photoFallbackText(caption?: string): string {
+  return caption ?? photoMarker;
+}
+
+export function isImageContentType(value: string | null): boolean {
+  return value !== null && value.startsWith("image/");
+}
+
 function buildInboundText(update: TelegramUpdate): string {
   const parts: string[] = [];
   if (update.replyToText) {
@@ -111,10 +119,14 @@ class GrammyBot implements TelegramBot {
       const update: TelegramUpdate = {
         id: String(context.message.message_id),
         fromId: String(context.from.id),
-        ...(context.message.caption === undefined ? {} : { text: context.message.caption }),
         ...this.replyContext(context.message.reply_to_message, context.me.id),
       };
-      if (images.length > 0) update.images = images;
+      if (images.length > 0) {
+        update.images = images;
+        if (context.message.caption !== undefined) update.text = context.message.caption;
+      } else {
+        update.text = photoFallbackText(context.message.caption);
+      }
       await receiver(update);
     });
   }
@@ -138,8 +150,11 @@ class GrammyBot implements TelegramBot {
       const file = await this.bot.api.getFile(fileId);
       if (file.file_path === undefined) return [];
       const response = await fetch(`https://api.telegram.org/file/bot${this.token}/${file.file_path}`);
+      if (!response.ok) return [];
+      const header = response.headers.get("content-type");
+      if (header !== null && !isImageContentType(header)) return [];
       const buffer = Buffer.from(await response.arrayBuffer());
-      const mimeType = response.headers.get("content-type") ?? "image/jpeg";
+      const mimeType = header ?? "image/jpeg";
       return [{ dataUrl: toDataUrl(buffer, mimeType), mimeType }];
     } catch {
       return [];

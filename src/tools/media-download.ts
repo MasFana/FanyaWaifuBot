@@ -5,7 +5,7 @@ import type { OutboundMedia, ToolDefinition } from "../core/types.js";
 const baseUrl = "https://backend1.tioo.eu.org";
 const clientVersion = "6.4.0";
 
-const mediaFailureMessage = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa videonya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi videonya tentang apa.";
+const mediaFailureMessage = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa medianya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi medianya tentang apa.";
 
 const endpoints: Record<Platform, string> = {
   youtube: "youtube", tiktok: "ttdl", instagram: "igdl", facebook: "fbdown",

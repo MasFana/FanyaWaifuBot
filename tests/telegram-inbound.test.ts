@@ -7,6 +7,8 @@ import { MemoryService } from "../src/memory/service.js";
 import {
   TelegramChannel,
   formatReplyQuote,
+  isImageContentType,
+  photoFallbackText,
   toDataUrl,
   truncateQuote,
   type TelegramBot,
@@ -130,6 +132,29 @@ test("a command sent as a reply still runs on the raw text", async () => {
 
   assert.equal(events.length, 1, "command must not be dropped");
   assert.ok(events[0]!.text.startsWith("[SYSTEM COMMAND"), events[0]!.text);
+});
+
+test("a caption-less photo marker text still produces a turn", async () => {
+  const { channel, events } = setup();
+
+  await channel.receive({ id: "m1", fromId: "123", text: "[Mengirim foto]" });
+
+  assert.equal(events.length, 1, "marker-only text must not be dropped");
+  assert.equal(events[0]!.text, "[Mengirim foto]");
+  assert.equal(events[0]!.images, undefined);
+});
+
+test("photoFallbackText returns the caption when present, else the marker", () => {
+  assert.equal(photoFallbackText("meme nih"), "meme nih");
+  assert.equal(photoFallbackText(), "[Mengirim foto]");
+  assert.equal(photoFallbackText(undefined), "[Mengirim foto]");
+});
+
+test("isImageContentType accepts image types and rejects non-images and null", () => {
+  assert.equal(isImageContentType("image/png"), true);
+  assert.equal(isImageContentType("image/jpeg"), true);
+  assert.equal(isImageContentType("application/json"), false);
+  assert.equal(isImageContentType(null), false);
 });
 
 test("truncateQuote and toDataUrl helpers", () => {

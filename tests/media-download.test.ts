@@ -91,7 +91,7 @@ test("download_media reports items that fall back to a text link", async () => {
   }
 });
 
-const MEDIA_FAILURE_MESSAGE = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa videonya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi videonya tentang apa.";
+const MEDIA_FAILURE_MESSAGE = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa medianya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi medianya tentang apa.";
 const UNSUPPORTED_LINK_MESSAGE = "Tautan itu tidak dikenali sebagai sumber media yang bisa kuunduh. Beri tahu pacarmu secara natural, tanpa istilah teknis, bahwa kamu nggak bisa mengunduh dari tautan itu.";
 
 test("download_media rejects unsupported links with a natural, non-technical message", async () => {
