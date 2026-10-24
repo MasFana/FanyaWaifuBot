@@ -2,7 +2,7 @@ import type { Clock } from "./clock.js";
 import type { ContextBuilder } from "./context.js";
 import { applyOwnerSentiment } from "./mood.js";
 import { extractTraits, mergeTraits } from "./persona-state.js";
-import type { Channel, InboundEvent, LLMMessage, ToolContext, WakeupEvent } from "./types.js";
+import type { Channel, InboundEvent, InboundImage, LLMMessage, LLMResponse, ToolContext, WakeupEvent } from "./types.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ToolRegistry } from "../tools/index.js";
@@ -32,6 +32,7 @@ export class Agent {
       inboundText: event.text,
       ...(event.storedMessageId === undefined ? {} : { excludeMessageId: event.storedMessageId }),
       ...(event.storedMessageIds === undefined ? {} : { excludeMessageIds: event.storedMessageIds }),
+      ...(event.images === undefined ? {} : { images: event.images }),
     });
     const ownerMessage = event.storedMessageId === undefined ? undefined : this.memory.getMessage(event.storedMessageId);
     const ownerContent = ownerMessage?.content;
@@ -51,7 +52,7 @@ export class Agent {
     try { return this.memory.exportOwner(userId).owner.timezone; } catch { return "Asia/Jakarta"; }
   }
 
-  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string; excludeMessageIds?: readonly string[] }): Promise<AgentOutcome> {
+  private async run(userId: string, trigger: WakeupEvent["triggerType"] | "inbound", input: { inboundText?: string; wakeup?: string; excludeMessageId?: string; excludeMessageIds?: readonly string[]; images?: readonly InboundImage[] }): Promise<AgentOutcome> {
     const runId = this.memory.createAgentRun(userId, trigger, this.model);
     try {
       const messages = await this.context.build({ userId, ...input });
@@ -68,11 +69,19 @@ export class Agent {
   private async loop(runId: string, userId: string, trigger: WakeupEvent["triggerType"] | "inbound", messages: LLMMessage[]): Promise<AgentOutcome> {
     const proactive = trigger !== "inbound";
     for (let cycle = 0; cycle < maxToolCycles; cycle += 1) {
-      const response = await this.llm.complete({
+      const request = {
         messages,
         tools: this.tools.definitions().map(({ name, description, parameters }) => ({ name, description, parameters })),
         model: this.model,
-      });
+      };
+      let response: LLMResponse;
+      try {
+        response = await this.llm.complete(request);
+      } catch (error) {
+        if (!hasImageParts(messages)) throw error;
+        messages = stripImages(messages);
+        response = await this.llm.complete({ ...request, messages });
+      }
       const assistant: LLMMessage = response.toolCalls.length > 0
         ? { role: "assistant", content: response.content, toolCalls: response.toolCalls as [typeof response.toolCalls[number], ...typeof response.toolCalls] }
         : { role: "assistant", content: response.content ?? "" };
@@ -111,6 +120,17 @@ export class Agent {
     }
     return { status: "failed", error: `Agent exceeded ${maxToolCycles} tool cycles` };
   }
+}
+
+function hasImageParts(messages: readonly LLMMessage[]): boolean {
+  return messages.some((message) => message.role === "user" && Array.isArray(message.content) && message.content.some((part) => part.type === "image_url"));
+}
+
+function stripImages(messages: readonly LLMMessage[]): LLMMessage[] {
+  return messages.map((message): LLMMessage => {
+    if (message.role !== "user" || !Array.isArray(message.content)) return message;
+    return { role: "user", content: message.content.filter((part) => part.type === "text").map((part) => part.text).join("") };
+  });
 }
 
 function greetingInstruction(slot: "morning" | "night"): string {

@@ -4,8 +4,13 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; dataUrl: string };
+
 export type LLMMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | readonly ContentPart[] }
   | { role: "assistant"; content: string; toolCalls?: readonly ToolCall[] }
   | { role: "assistant"; content: null; toolCalls: readonly [ToolCall, ...ToolCall[]] }
   | { role: "tool"; content: string; toolCallId: string };

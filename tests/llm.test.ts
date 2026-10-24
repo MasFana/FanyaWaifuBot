@@ -72,6 +72,36 @@ test("OpenAI provider maps messages, tools, and tool-call JSON", async () => {
   }]);
 });
 
+test("OpenAI provider maps multimodal user content to text and image_url parts", async () => {
+  const calls: unknown[] = [];
+  const client: ChatCompletionClient = {
+    async create(input) {
+      calls.push(input);
+      return { choices: [{ message: { content: "ok" } }] };
+    },
+  };
+  const provider = new OpenAIProvider(client, async () => {});
+  const multimodal: LLMRequest = {
+    model: "test-model",
+    messages: [
+      { role: "user", content: [{ type: "text", text: "lihat" }, { type: "image_url", dataUrl: "data:image/png;base64,ZZZ" }] },
+      { role: "user", content: "halo biasa" },
+    ],
+    tools: [],
+  };
+
+  await provider.complete(multimodal);
+
+  assert.deepEqual(calls, [{
+    model: "test-model",
+    messages: [
+      { role: "user", content: [{ type: "text", text: "lihat" }, { type: "image_url", image_url: { url: "data:image/png;base64,ZZZ" } }] },
+      { role: "user", content: "halo biasa" },
+    ],
+    tools: [],
+  }]);
+});
+
 test("OpenAI provider retries 429, 5xx, and proven network failures no more than three attempts", async () => {
   let attempts = 0;
   const delays: number[] = [];

@@ -156,7 +156,8 @@ test("greeting wakeup tells the model the correct time slot", async () => {
 
   await agent.runWakeup({ userId: owner.id, triggerType: "greeting", greeting: "night" });
 
-  const turn = fake.getRequests()[0]?.messages.at(-1)?.content ?? "";
+  const turn = fake.getRequests()[0]?.messages.at(-1)?.content;
+  assert.ok(typeof turn === "string");
   assert.match(turn, /malam/u);
   assert.doesNotMatch(turn, /pagi/u);
 });
@@ -186,7 +187,8 @@ test("spontaneous wakeup prompt includes the current local time and skip instruc
 
   await agent.runWakeup({ userId: owner.id, triggerType: "spontaneous" });
 
-  const turn = fake.getRequests()[0]?.messages.at(-1)?.content ?? "";
+  const turn = fake.getRequests()[0]?.messages.at(-1)?.content;
+  assert.ok(typeof turn === "string");
   assert.match(turn, /waktu lokal saat ini/i);
   assert.match(turn, /\[SKIP_PROACTIVE\]/);
 });
