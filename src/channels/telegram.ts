@@ -424,14 +424,43 @@ export class TelegramChannel {
 }
 
 /**
+ * Membersihkan artefak AI dan roleplay sebelum dipecah menjadi bubble:
+ * 1. Mengubah **bold** atau __bold__ menjadi teks polos (judul/nama tetap terbaca).
+ * 2. Menghapus narasi aksi roleplay di dalam asterisk tunggal (*menatap dari jauh*, dll).
+ * 3. Menghapus bullet list atau markdown heading di awal baris.
+ */
+export function sanitizeModelOutput(rawText: string): string {
+  let cleaned = rawText;
+
+  // 1. Buka bungkus **bold** dan __underline/bold__ (pertahankan teks di dalamnya)
+  cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
+  cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
+
+  // 2. Hapus narasi roleplay *aksi* (minimal 2 kata atau >= 4 karakter huruf di antara asterisk tunggal)
+  cleaned = cleaned.replace(/(?<!\*)\*([^\s*][^*\n]{2,}?[^\s*])\*(?!\*)/g, " ");
+
+  // 3. Hapus markdown heading (# ) atau bullet points (- / •) di awal baris
+  cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*)[ \t]+/gm, "");
+
+  // 4. Rapikan spasi ganda akibat penghapusan aksi roleplay
+  cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  return cleaned.trim();
+}
+
+/**
  * Memecah teks menjadi balon chat secara dinamis:
- * 1. Menghormati pemisah paragraf (\n\n) dari LLM.
- * 2. Jika ada 1 balon yang terlalu panjang (> 220 karakter), otomatis memecahnya
- *    pada batas kalimat agar tidak terlihat seperti tembok teks (wall of text).
+ * 1. Menghormati pemisah paragraf (\n\n) dari LLM setelah dibersihkan dari markdown/roleplay.
+ * 2. Jika ada 1 balon yang terlalu panjang (> 380 karakter), otomatis memecahnya
+ *    pada batas kalimat agar tidak terlihat seperti tembok teks.
  * 3. Semua balon dibatasi maksimum `maxBubbles`; kelebihannya digabung ke balon terakhir.
  */
-function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
-  const paragraphs = rawText
+export function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
+  const sanitized = sanitizeModelOutput(rawText);
+  if (!sanitized) return [];
+
+  const paragraphs = sanitized
     .split(/\r?\n\s*\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
@@ -439,7 +468,7 @@ function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
   const bubbles: string[] = [];
 
   for (const paragraph of paragraphs) {
-    if (paragraph.length <= 220 || paragraph.includes("\n")) {
+    if (paragraph.length <= 380 || paragraph.includes("\n")) {
       bubbles.push(humanizeBubble(paragraph));
       continue;
     }
@@ -448,7 +477,7 @@ function splitDynamicBubbles(rawText: string, maxBubbles: number): string[] {
     let current = "";
 
     for (const sentence of sentences) {
-      if ((current + sentence).trim().length > 180 && current.trim()) {
+      if ((current + sentence).trim().length > 320 && current.trim()) {
         bubbles.push(humanizeBubble(current));
         current = sentence;
       } else {
