@@ -3,7 +3,10 @@ import test from "node:test";
 import { z } from "zod";
 import { FrozenClock } from "../src/core/clock.js";
 import type { ToolContext, ToolDefinition } from "../src/core/types.js";
+import { migrate, openDatabase } from "../src/db/index.js";
+import { MemoryService } from "../src/memory/service.js";
 import { createBuiltinTools, ToolRegistry } from "../src/tools/index.js";
+import { createScheduleTools } from "../src/tools/schedule.js";
 
 const context: ToolContext = { userId: "owner-1" };
 
@@ -47,4 +50,39 @@ test("calculator rejects executable, malformed, and resource-exhausting input", 
   for (const expression of ["process.exit()", "Math.constructor", "1 / 0", "1 +".repeat(600), "(".repeat(33) + "1" + ")".repeat(33)]) {
     await assert.rejects(tools.execute("utility_calculate", { expression }, context));
   }
+});
+
+test("schedule_upsert accepts an ISO date-time and stores millisecond timestamps", async () => {
+  const clock = new FrozenClock(Date.UTC(2026, 9, 25, 0, 0));
+  const database = openDatabase(":memory:");
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const tools = new ToolRegistry(createScheduleTools(memory, clock));
+
+  await tools.execute("schedule_upsert", {
+    title: "Beli obat ke toko pak nur",
+    eventAt: "2026-10-25T09:00:00+07:00",
+    remindAt: "2026-10-25T09:00:00+07:00",
+  }, { userId: owner.id });
+
+  assert.equal(memory.listPendingCommitments(owner.id)[0]?.eventAt, Date.UTC(2026, 9, 25, 2, 0));
+  database.close();
+});
+
+test("schedule_upsert rejects Unix seconds", async () => {
+  const clock = new FrozenClock(Date.UTC(2026, 9, 25, 0, 0));
+  const database = openDatabase(":memory:");
+  migrate(database, clock);
+  const memory = new MemoryService(database, clock);
+  const owner = memory.claimOwner("telegram", "123");
+  assert.ok(owner);
+  const tools = new ToolRegistry(createScheduleTools(memory, clock));
+
+  await assert.rejects(
+    tools.execute("schedule_upsert", { title: "Beli obat", eventAt: 1792976400 }, { userId: owner.id }),
+    /Invalid arguments/u,
+  );
+  database.close();
 });

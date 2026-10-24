@@ -104,6 +104,16 @@ test("agent contains LLM and delivery errors while marking run failed", async ()
   assert.equal((database.prepare("SELECT count(*) AS count FROM agent_runs WHERE status = 'failed'").get() as { count: number }).count, 2);
 });
 
+test("agent sends a natural fallback when the provider is unavailable", async () => {
+  const { agent, channel, database, fake, inbound } = setup();
+  fake.enqueue(new Error("provider down"));
+
+  await agent.runInbound(inbound);
+
+  assert.match(channel.sent[0]?.text ?? "", /lagi gangguan|coba lagi/u);
+  assert.equal((database.prepare("SELECT status FROM agent_runs").get() as { status: string }).status, "failed");
+});
+
 test("agent passes channel media delivery into the tool context", async () => {
   const database = openDatabase(":memory:");
   databases.push(database);

@@ -34,6 +34,9 @@ export class Agent {
       ...(event.storedMessageIds === undefined ? {} : { excludeMessageIds: event.storedMessageIds }),
       ...(event.images === undefined ? {} : { images: event.images }),
     });
+    if (outcome.status === "failed") {
+      await this.channel.sendReply(event.userId, "maaf bub, chat aku lagi gangguan bentar 😭 coba kirim lagi ya").catch(() => undefined);
+    }
     const ownerMessage = event.storedMessageId === undefined ? undefined : this.memory.getMessage(event.storedMessageId);
     const ownerContent = ownerMessage?.content;
     if (outcome.status === "completed" && outcome.delivered === true && this.writer !== undefined && ownerMessage !== undefined && ownerContent !== null && ownerContent !== undefined) {
