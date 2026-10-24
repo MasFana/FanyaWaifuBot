@@ -23,7 +23,7 @@ class TestChannel implements Channel {
   async sendProactive(userId: string, text: string): Promise<void> { this.sent.push({ userId, text, proactive: true }); }
 }
 
-function setup() {
+function setup(tools?: readonly ToolDefinition[]) {
   const database = openDatabase(":memory:");
   databases.push(database);
   const clock = new FrozenClock(now);
@@ -34,11 +34,80 @@ function setup() {
   const channel = new TestChannel();
   const fake = new FakeLLMProvider();
   const context = new ContextBuilder(memory, clock, "Fanya persona", "Safety rules", "Tool guidance");
-  const agent = new Agent(fake, memory, new ToolRegistry(createBuiltinTools({ clock, timeZone: "Asia/Jakarta" })), channel, context, clock, "test-model");
+  const agent = new Agent(fake, memory, new ToolRegistry(tools ?? createBuiltinTools({ clock, timeZone: "Asia/Jakarta" })), channel, context, clock, "test-model");
   const inbound: InboundEvent = { id: "inbound-1", userId: owner.id, text: "Berapa 2+2?", receivedAt: now };
   memory.appendMessage(owner.id, { channel: "telegram", role: "user", content: inbound.text });
   return { agent, channel, database, fake, inbound, memory, owner };
 }
+
+test("agent retries provider failures three times before delivering reply", async () => {
+  const { agent, channel, fake, inbound } = setup();
+  fake.enqueue(new Error("503 provider unavailable"));
+  fake.enqueue(new Error("503 provider unavailable"));
+  fake.enqueue(new Error("503 provider unavailable"));
+  fake.enqueue({ content: "aku balik, bub", toolCalls: [] });
+
+  await agent.runInbound(inbound);
+
+  assert.equal(fake.getRequests().length, 4);
+  assert.deepEqual(channel.sent, [{ userId: inbound.userId, text: "aku balik, bub", proactive: false }]);
+});
+
+test("agent gives the LLM three chances to correct failed tool calls", async () => {
+  let attempts = 0;
+  const tool: ToolDefinition = {
+    name: "flaky",
+    description: "test tool",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    argumentSchema: z.object({}).strict(),
+    async execute() {
+      attempts += 1;
+      if (attempts < 4) throw new Error("Commitment event must be in the future");
+      return "done";
+    },
+  };
+  const { agent, channel, fake, inbound } = setup([tool]);
+  for (let index = 1; index <= 4; index += 1) {
+    fake.enqueue({ content: null, toolCalls: [{ id: `flaky-${index}`, name: "flaky", arguments: {} }] });
+  }
+  fake.enqueue({ content: "selesai", toolCalls: [] });
+
+  await agent.runInbound(inbound);
+
+  assert.equal(attempts, 4);
+  assert.equal(fake.getRequests().length, 5);
+  assert.equal(channel.sent[0]?.text, "selesai");
+});
+
+test("agent sends fallback after fourth failed tool call", async () => {
+  const { agent, channel, fake, inbound } = setup();
+  for (let index = 1; index <= 4; index += 1) {
+    fake.enqueue({ content: null, toolCalls: [{ id: `missing-${index}`, name: "missing", arguments: {} }] });
+  }
+
+  await agent.runInbound(inbound);
+
+  assert.equal(fake.getRequests().length, 4);
+  assert.match(channel.sent[0]?.text ?? "", /chat aku lagi gangguan/u);
+});
+
+test("agent does not retry permanent tool errors", async () => {
+  let attempts = 0;
+  const tool: ToolDefinition = {
+    name: "invalid",
+    description: "test tool",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    argumentSchema: z.object({}).strict(),
+    async execute() { attempts += 1; throw new Error("Commitment event must be in the future"); },
+  };
+  const { agent, fake, inbound } = setup([tool]);
+  fake.enqueue({ content: null, toolCalls: [{ id: "invalid-1", name: "invalid", arguments: {} }] });
+  fake.enqueue({ content: "tanggalnya salah", toolCalls: [] });
+
+  await agent.runInbound(inbound);
+
+  assert.equal(attempts, 1);
+});
 
 test("agent executes tool, persists complete tool history, and delivers final reply", async () => {
   const { agent, channel, database, fake, inbound } = setup();
@@ -69,18 +138,18 @@ test("second inbound replays stored assistant tool call directly before matching
   assert.deepEqual(messages[assistantIndex + 1], { role: "tool", content: "4", toolCallId: "persisted-call" });
 });
 
-test("agent records failed tool calls, supplies result message, and ends error after exactly six cycles without throwing", async () => {
+test("agent records failed tool calls, supplies result messages, and ends after fourth failure without throwing", async () => {
   const { agent, database, fake, inbound } = setup();
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     fake.enqueue({ content: null, toolCalls: [{ id: `bad-${index}`, name: "missing", arguments: {} }] });
   }
 
   await agent.runInbound(inbound);
 
-  assert.equal((database.prepare("SELECT count(*) AS count FROM tool_events WHERE status = 'error'").get() as { count: number }).count, 6);
+  assert.equal((database.prepare("SELECT count(*) AS count FROM tool_events WHERE status = 'error'").get() as { count: number }).count, 4);
   assert.equal((database.prepare("SELECT status FROM agent_runs").get() as { status: string }).status, "failed");
-  assert.equal((database.prepare("SELECT count(*) AS count FROM messages WHERE role = 'tool'").get() as { count: number }).count, 6);
-  assert.equal(fake.getRequests().length, 6);
+  assert.equal((database.prepare("SELECT count(*) AS count FROM messages WHERE role = 'tool'").get() as { count: number }).count, 4);
+  assert.equal(fake.getRequests().length, 4);
 });
 
 test("tool event and tool transcript insert atomically", () => {

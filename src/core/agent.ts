@@ -9,7 +9,9 @@ import type { ToolRegistry } from "../tools/index.js";
 import type { PostTurnWriter } from "../memory/writer.js";
 
 export type AgentOutcome = { status: "completed" | "failed" | "skipped"; error?: string; delivered?: boolean };
-const maxToolCycles = 6;
+const maxToolCycles = 8;
+const maxRetries = 3;
+const maxFailedToolResults = 3;
 
 export class Agent {
   constructor(
@@ -77,6 +79,7 @@ export class Agent {
 
   private async loop(runId: string, userId: string, trigger: WakeupEvent["triggerType"] | "inbound", messages: LLMMessage[]): Promise<AgentOutcome> {
     const proactive = trigger !== "inbound";
+    let failedToolResults = 0;
     for (let cycle = 0; cycle < maxToolCycles; cycle += 1) {
       const request = {
         messages,
@@ -85,12 +88,14 @@ export class Agent {
       };
       let response: LLMResponse;
       try {
-        response = await this.llm.complete(request);
+        response = hasImageParts(messages)
+          ? await this.llm.complete(request)
+          : await retry(() => this.llm.complete(request));
       } catch (error) {
         if (!hasImageParts(messages)) throw error;
         console.error("[vision] provider rejected image turn, retrying text-only", error);
         messages = stripImages(messages);
-        response = await this.llm.complete({ ...request, messages });
+        response = await retry(() => this.llm.complete({ ...request, messages }));
       }
       const assistant: LLMMessage = response.toolCalls.length > 0
         ? { role: "assistant", content: response.content, toolCalls: response.toolCalls as [typeof response.toolCalls[number], ...typeof response.toolCalls] }
@@ -126,10 +131,23 @@ export class Agent {
         const content = JSON.stringify(output);
         this.memory.recordToolResult(userId, runId, call, output, status, this.clock.now() - started);
         messages.push({ role: "tool", content, toolCallId: call.id });
+        if (status === "error" && (failedToolResults += 1) > maxFailedToolResults) {
+          return { status: "failed", error: `Agent exceeded ${maxFailedToolResults} failed tool recoveries` };
+        }
       }
     }
     return { status: "failed", error: `Agent exceeded ${maxToolCycles} tool cycles` };
   }
+}
+
+async function retry<T>(operation: () => Promise<T>, shouldRetry: (error: unknown) => boolean = () => true): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try { return await operation(); }
+    catch (error) {
+      if (attempt === maxRetries || !shouldRetry(error)) throw error;
+    }
+  }
+  throw new Error("Retry limit exceeded");
 }
 
 function hasImageParts(messages: readonly LLMMessage[]): boolean {
