@@ -91,12 +91,50 @@ test("download_media reports items that fall back to a text link", async () => {
   }
 });
 
-test("download_media rejects unsupported and media-less links", async () => {
-  await assert.rejects(downloadMedia.execute({ url: "https://example.com/watch" }, { userId: "u" }), /Unsupported link/u);
+const MEDIA_FAILURE_MESSAGE = "Gagal membuka atau mengambil media dari tautan tersebut saat ini. Beri tahu pacarmu secara natural (tanpa menyebut kode error atau kata 'server downloader') bahwa videonya lagi nggak mau kebuka dari tempatmu, lalu tanyakan isi videonya tentang apa.";
+const UNSUPPORTED_LINK_MESSAGE = "Tautan itu tidak dikenali sebagai sumber media yang bisa kuunduh. Beri tahu pacarmu secara natural, tanpa istilah teknis, bahwa kamu nggak bisa mengunduh dari tautan itu.";
 
+test("download_media rejects unsupported links with a natural, non-technical message", async () => {
+  await assert.rejects(
+    downloadMedia.execute({ url: "https://example.com/watch" }, { userId: "u" }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.doesNotMatch(error.message, /Unsupported link/u);
+      assert.equal(error.message, UNSUPPORTED_LINK_MESSAGE);
+      return true;
+    },
+  );
+});
+
+test("download_media rejects a non-OK downloader response without leaking status or backend name", async () => {
+  const restore = stubFetchStatus(503);
+  try {
+    await assert.rejects(
+      downloadMedia.execute({ url: "https://youtu.be/x" }, { userId: "u" }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.doesNotMatch(error.message, /\b(?:50[0-9]|40[0-9])\b/u);
+        assert.doesNotMatch(error.message, /Downloader API/u);
+        assert.equal(error.message, MEDIA_FAILURE_MESSAGE);
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("download_media reports source errors and media-less payloads as natural media failures", async () => {
   const restore = stubFetch([], { status: false, error: "Failed to fetch" });
   try {
-    await assert.rejects(downloadMedia.execute({ url: "https://youtu.be/x" }, { userId: "u" }), /Source error: Failed to fetch/u);
+    await assert.rejects(
+      downloadMedia.execute({ url: "https://youtu.be/x" }, { userId: "u" }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, MEDIA_FAILURE_MESSAGE);
+        return true;
+      },
+    );
   } finally {
     restore();
   }
@@ -108,5 +146,11 @@ function stubFetch(calls: string[], payload: unknown): () => void {
     calls.push(String(input));
     return Promise.resolve(new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } }));
   }) as typeof fetch;
+  return () => { globalThis.fetch = original; };
+}
+
+function stubFetchStatus(status: number): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() => Promise.resolve(new Response("{}", { status, headers: { "content-type": "application/json" } }))) as typeof fetch;
   return () => { globalThis.fetch = original; };
 }
