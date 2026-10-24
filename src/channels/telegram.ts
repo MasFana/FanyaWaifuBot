@@ -175,20 +175,33 @@ class GrammyBot implements TelegramBot {
   private async downloadPhoto(
     fileId: string | undefined,
   ): Promise<InboundImage[]> {
-    if (fileId === undefined) return [];
+    if (fileId === undefined) {
+      console.error("[photo] no file_id on message");
+      return [];
+    }
     try {
       const file = await this.bot.api.getFile(fileId);
-      if (file.file_path === undefined) return [];
+      if (file.file_path === undefined) {
+        console.error("[photo] getFile returned no file_path", { fileId });
+        return [];
+      }
       const response = await fetch(
         `https://api.telegram.org/file/bot${this.token}/${file.file_path}`,
       );
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.error("[photo] file fetch not ok", { status: response.status, filePath: file.file_path });
+        return [];
+      }
       const header = response.headers.get("content-type");
-      if (header !== null && !isImageContentType(header)) return [];
+      if (header !== null && !isImageContentType(header)) {
+        console.error("[photo] unexpected content-type", { header, filePath: file.file_path });
+        return [];
+      }
       const buffer = Buffer.from(await response.arrayBuffer());
       const mimeType = header ?? "image/jpeg";
       return [{ dataUrl: toDataUrl(buffer, mimeType), mimeType }];
-    } catch {
+    } catch (error) {
+      console.error("[photo] download threw", error);
       return [];
     }
   }

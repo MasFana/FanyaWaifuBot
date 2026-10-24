@@ -79,6 +79,7 @@ export class Agent {
         response = await this.llm.complete(request);
       } catch (error) {
         if (!hasImageParts(messages)) throw error;
+        console.error("[vision] provider rejected image turn, retrying text-only", error);
         messages = stripImages(messages);
         response = await this.llm.complete({ ...request, messages });
       }
