@@ -417,7 +417,7 @@ export class TelegramChannel {
           userId,
           event,
           `[SYSTEM COMMAND: Pacarmu baru saja mengetik /start untuk menyambungkan Telegram. Sapa dia dengan hangat dan manja sesuai kepribadianmu, lalu beri tahu secara natural bahwa ID Telegram dia adalah ${chatId} kalau dia butuh menyimpannya di konfigurasi.]`,
-          `haloooo sayaaaaang, aya udah nyambung ke telegram kamuuu hehe ><\n\nid telegram kamu itu ${chatId} yaaa 🤍`,
+          `haloooo sayaaaaang, aya udah nyambung ke telegram kamuuu hehe ( ́• ω •\`)ノ\n\nid telegram kamu itu ${chatId} yaaa`,
         );
         return true;
 
@@ -497,7 +497,7 @@ export class TelegramChannel {
             userId,
             event,
             `[SYSTEM COMMAND: Pacarmu baru saja mengatur jam tenang/jam tidurnya dari pukul ${start} sampai ${end}. Konfirmasi dengan manis bahwa kamu sudah mencatatnya dan tidak akan berisik membangunkannya di jam tersebut.]`,
-            `okeeey sayaaaaang, dari jam ${start} sampai ${end} aku ga bakal berisik gangguin kamu bobo hehe 🤍`,
+            `okeeey sayaaaaang, dari jam ${start} sampai ${end} aku ga bakal berisik gangguin kamu bobo hehe`,
           );
         }
         return true;
@@ -578,17 +578,23 @@ export function sanitizeModelOutput(rawText: string): string {
   cleaned = cleaned.replace(/\*\*([^*\n]+)\*\*/g, "$1");
   cleaned = cleaned.replace(/__([^_\n]+)__/g, "$1");
 
-  // 2. Hapus narasi roleplay *aksi* (minimal 2 kata atau >= 4 karakter huruf di antara asterisk tunggal)
-  cleaned = cleaned.replace(/(?<!\*)\*([^\s*][^*\n]{2,}?[^\s*])\*(?!\*)/g, " ");
+  // 2. Hapus narasi roleplay *aksi* (diawali & diakhiri huruf, ada spasi) tanpa merusak kaomoji berasterisk
+  cleaned = cleaned.replace(/(?<!\*)\*([a-zA-Z][^*\n]*?\s+[^*\n]*?[a-zA-Z])\*(?!\*)/g, " ");
 
-  // 3. Hapus markdown heading (# ) atau bullet points (- / •) di awal baris
-  cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*)[ \t]+/gm, "");
+  // 3. Hapus markdown heading, bullet points (- / • / *), atau numbered list (1.) di awal baris
+  cleaned = cleaned.replace(/^[ \t]*(?:#{1,6}|\u2022|-|\*|\d+\.)[ \t]+/gm, "");
 
-  // 4. Rapikan spasi ganda akibat penghapusan aksi roleplay
+  // 4. Ubah panah kaku khas bot rekap (→, ->, =>) jadi koma obrolan
+  cleaned = cleaned.replace(/\s*(?:→|->|=>)\s*/g, ", ");
+
+  // 5. Buang emoji hati putih yang sering di-spam
+  cleaned = cleaned.replace(/🤍/g, "");
+
+  // 6. Rapikan spasi ganda akibat penghapusan aksi roleplay
   cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
-  // 5. Runtuhkan "menu pertanyaan" (>=2 baris berakhiran "?") jadi satu pesan mengalir
+  // 7. Runtuhkan "menu pertanyaan" (>=2 baris berakhiran "?") jadi satu pesan mengalir
   const questionLines = cleaned.split("\n").filter((line) => line.trim().length > 0);
   if (
     questionLines.length >= 2 &&
@@ -713,7 +719,7 @@ function formatMemoryFallback(items: string[]): string {
   if (items.length === 0) {
     return "hmmm aku belum nyatet hal-hal khusus nih sayaaaaang, cerita-cerita dulu dong sama akuuu hehe ><";
   }
-  return `kalau soal kamu mah aku inget dong sayaaaaang hehe, aku inget soal ${lowerJoined(items, ", terus ")} 🤍`;
+  return `kalau soal kamu mah aku inget dong sayaaaaang hehe, aku inget soal ${lowerJoined(items, ", terus ")}`;
 }
 
 function formatAgendaFallback(items: string[]): string {
